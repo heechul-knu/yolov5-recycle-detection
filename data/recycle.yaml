@@ -1,0 +1,7 @@
+train: ['/home/haejin/ssd_2/RecycleTrash/yolo/images/3rd', '/home/haejin/ssd_2/RecycleTrash/yolo/images/4th', '/home/haejin/ssd_2/RecycleTrash/yolo/images/num', '/home/haejin/ssd_2/RecycleTrash/yolo/images/newpaperpack', '/home/haejin/ssd_2/RecycleTrash/yolo/images/newpet', '/home/haejin/ssd_2/RecycleTrash/yolo/images/pet_glass']
+val: ['/home/haejin/ssd_2/RecycleTrash/yolo/images/5th', '/home/haejin/ssd_2/RecycleTrash/yolo/images/20201122', '/home/haejin/ssd_2/RecycleTrash/yolo/images/20201203', '/home/haejin/ssd_2/RecycleTrash/yolo/images/20201205', '/home/haejin/ssd_2/RecycleTrash/yolo/images/extra', '/home/haejin/ssd_2/RecycleTrash/yolo/images/joo_eun', '/home/haejin/ssd_2/RecycleTrash/yolo/images/newmix']
+test: ['/home/haejin/ssd_2/RecycleTrash/yolo/images/test', '/home/haejin/ssd_2/RecycleTrash/yolo/images/kvl',]
+
+nc: 7
+
+names: ['c_1', 'c_2', 'c_3', 'c_4', 'c_5', 'c_6', 'c_7']

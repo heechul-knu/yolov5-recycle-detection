@@ -1,0 +1,6 @@
+runs/
+__pycache__/
+.lh/
+.vscode/
+.ipynb_checkpoints/
+wandb/
