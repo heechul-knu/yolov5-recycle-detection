@@ -544,7 +544,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         # 붙여넣을 이미지의 구역 분할
         Position = [
             [0,0,xmin,ymin],    # 1
-            [xmin,0,xmax,ymin], # 2
+            [xmin,0,xmax,ymin], # 2 
             [xmax,0,1,ymin],    # 3
             [0,ymin,xmin,ymax], # 4
             [xmax,ymin,1,ymax], # 6
