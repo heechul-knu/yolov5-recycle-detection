@@ -5,3 +5,6 @@ __pycache__/
 .ipynb_checkpoints/
 wandb/
 *.pt
+run.sh
+run_exp.sh
+data/check_dataset.ipynb
