@@ -370,7 +370,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                     temp = glob.glob(str(p / '**' / '*.*'), recursive=True)
                     for idx, file in enumerate(temp):
                         f.append(file)
-                        if '3rd' in file: #FIXME:crop_aug할 dataset 입력 받기?
+                        if '3rd' in file and self.train: #FIXME:crop_aug할 dataset 입력 받기?
                             self.aug_idx.append(idx)
                         else : 
                             self.no_aug_idx.append(idx)
