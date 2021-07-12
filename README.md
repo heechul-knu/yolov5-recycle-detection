@@ -1,12 +1,9 @@
 # yolov5-recycle-detection
 
-<details open>
-<summary>TODO</summary>
- 
-1. add `albumentation` for cropped objects  
-2. comparison batch-size, freeze, crop-aug-plus
-3. comparison rect, multi-scale, adam, sync-bn
-</detail>   
+## TODO 
+- [x] add `albumentation` for cropped objects  
+- [x] comparison batch-size, freeze, crop-aug-plus
+- [x] comparison rect, multi-scale, adam, sync-bn
 
 ---
 
