@@ -1,10 +1,18 @@
+# log
 runs/
+wandb/
+
+# cp file
+*.pt
+
+# temp
 __pycache__/
 .lh/
 .vscode/
 .ipynb_checkpoints/
-wandb/
-*.pt
+
+# for me
 run.sh
 run_exp.sh
 data/check_dataset.ipynb
+test.ipynb

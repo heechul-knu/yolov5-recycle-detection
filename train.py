@@ -101,8 +101,10 @@ def train(hyp, opt, device, tb_writer=None):
     test_path = [ base_path+x for x in data_dict['val']]
 
     # Freeze
-    freeze = []  # parameter names to freeze (full or partial)
-    # freeze = ['model.%s.' % x for x in range(10)]
+    if opt.freeze: # backbone freeze
+        freeze = ['model.%s.' % x for x in range(12)]
+    else:
+        freeze = []  # parameter names to freeze (full or partial)
     for k, v in model.named_parameters():
         v.requires_grad = True  # train all layers
         if any(x in k for x in freeze):
@@ -503,7 +505,10 @@ if __name__ == '__main__':
     parser.add_argument('--bbox_interval', type=int, default=-1, help='Set bounding-box image logging interval for W&B')
     parser.add_argument('--save_period', type=int, default=-1, help='Log model after every "save_period" epoch')
     parser.add_argument('--artifact_alias', type=str, default="latest", help='version of dataset artifact to be used')
-    parser.add_argument('--crop_aug', action='store_true', help='use crop_aug') 
+    
+    # add for recycle
+    parser.add_argument('--crop_aug', action='store_true', help='use crop_aug')
+    parser.add_argument('--freeze', action='store_true', help='freeze')
     opt = parser.parse_args()
 
     # Set DDP variables
