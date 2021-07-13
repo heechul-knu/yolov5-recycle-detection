@@ -1,8 +1,8 @@
 base : '/home/haejin/ssd_2/RecycleTrash/yolo/images/'
 
-train: ['3rd', '4th', 'num', 'newpaperpack', 'newpet', 'pet_glass']
+train: ['3rd', '4th', 'num', 'newpaperpack', 'newpet', 'pet_glass', 'kvl']
 val: ['5th', '20201122', '20201203', '20201205', 'extra', 'joo_eun', 'newmix']
-test: ['test', 'kvl']
+test: ['test']
 
 nc: 7
 

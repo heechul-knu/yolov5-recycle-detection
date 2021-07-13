@@ -1,9 +1,0 @@
-base : '/home/haejin/ssd_2/RecycleTrash/test(21.07.08)/'
-
-train: ['images']
-val: ['images']
-test: ['images']
-
-nc: 7
-
-names: ['c_1', 'c_2', 'c_3', 'c_4', 'c_5', 'c_6', 'c_7']
