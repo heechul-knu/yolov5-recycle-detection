@@ -79,6 +79,10 @@ def run(data,
         # Data
         with open(data) as f:
             data = yaml.safe_load(f)
+
+        base_path = data['base']
+        data[task] = [base_path+x for x in data[task]]
+        
         check_dataset(data)  # check
 
     # Half
@@ -102,11 +106,7 @@ def run(data,
         if device.type != 'cpu':
             model(torch.zeros(1, 3, imgsz, imgsz).to(device).type_as(next(model.parameters())))  # run once
         task = task if task in ('train', 'val', 'test') else 'test'  # path to train/val/test images
-
-        base_path = data['base']
-        path = [base_path+x for x in data[task]]
-
-        dataloader = create_dataloader(path, imgsz, batch_size, gs, single_cls, pad=0.5, rect=True,
+        dataloader = create_dataloader(data[task], imgsz, batch_size, gs, single_cls, pad=0.5, rect=True,
                                        prefix=colorstr(f'{task}: '))[0]
 
     seen = 0
