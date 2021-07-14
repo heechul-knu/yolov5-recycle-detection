@@ -6,39 +6,51 @@ It is recommended to dataset root to `./data`. The folder structure is same with
 .
 └── data
     ├── images
-    │   ├── train
-    │   │   ├── 01
-    │   │   │   ├── image1.jpg
-    │   │   │   └── ...
-    │   │   ├── 02
+    │   ├── train01
+    │   │   ├── image1.jpg
     │   │   └── ...
-    │   ├── val
-    │   │   ├──v01
+    │   ├── train02
     │   │   └── ...
-    │   └── test
-    │       ├──t01
-    │       └── ...
+    │   ├── ...
+    │   │
+    │   ├── valid01
+    │   │   └── ...
+    │   ├── valid02
+    │   │   └── ...
+    │   ├── ...
+    │   │
+    │   ├── test01
+    │   │   └── ...
+    │   ├── test02
+    │   │   └── ...
+    │   └── ...
     └── labels
-        ├── train
-        │   ├── 01
-        │   │   ├── image1.txt
-        │   │   └── ...
-        │   ├── 02
+        ├── train01
+        │   ├── image1.txt
         │   └── ...
-        ├── val
-        │   ├──v01
+        ├── train02
         │   └── ...
-        └── test
-            ├──t01
-            └── ...
+        ├── ...
+        │
+        ├── valid01
+        │   └── ...
+        ├── valid02
+        │   └── ...
+        ├── ...
+        │
+        ├── test01
+        │   └── ...
+        ├── test02
+        │   └── ...
+        └── ...
 ```
 
 You can write `yaml`file of the above folder structure like this.
 ```yaml
 base: './data/images'
-train: ['01', '02', ... ]
-val: ['v01', 'v02', ... ]
-test: ['t01', 't02', ... ]
+train: ['train01', 'train02', ... ]
+val: ['valid01', 'valid02', ... ]
+test: ['test01', 'test02', ... ]
 
 # num of class
 nc: 80

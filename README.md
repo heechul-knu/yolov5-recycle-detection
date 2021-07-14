@@ -24,7 +24,7 @@ $ cd ./data/images
 $ ls 
 train01 train02 ... valid01 valid02 ... test01 test02 ...
 ```
-You can write `yaml` file like this. 
+You can write `yaml` file like this. [see more](https://github.com/heechul-knu/yolov5-recycle-detection/tree/master/data)
 
 ```yaml
 # in dataset.yaml
@@ -45,7 +45,7 @@ test_path = [ base_path+x for x in data_dict['val']]
 
 ## Crop-Augmentation
 ```python
-if self.train :
+if self.crop_aug :
     img , labels = self.selfmix(img, labels, h, w)
 
 ...
