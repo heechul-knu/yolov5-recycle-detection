@@ -1,4 +1,5 @@
 # log
+archive/
 runs/
 wandb/
 
@@ -12,7 +13,5 @@ __pycache__/
 .ipynb_checkpoints/
 
 # for me
-run.sh
-run_exp.sh
-data/check_dataset.ipynb
-test.ipynb
+*.sh
+*.ipynb

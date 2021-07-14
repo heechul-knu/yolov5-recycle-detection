@@ -126,23 +126,29 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
         logger.info('Transferred %g/%g items from %s' % (len(state_dict), len(model.state_dict()), weights))  # report
     else:
         model = Model(cfg, ch=3, nc=nc, anchors=hyp.get('anchors')).to(device)  # create
-
-    # train_path = data_dict['train']
-    # test_path = data_dict['val']
+    
+    #########################################################################
+    # TODO:dataset 로드 방법 변경
     base_path = data_dict['base']
     train_path = [ base_path+x for x in data_dict['train']]
     data_dict['train'] = train_path
     test_path = [ base_path+x for x in data_dict['val']]
     data_dict['val'] = test_path
-    
+    #########################################################################
+
     with torch_distributed_zero_first(RANK):
         check_dataset(data_dict)  # check
+    # train_path = data_dict['train']
+    # test_path = data_dict['val']
 
     # Freeze
+    #########################################################################
+    # TODO:backbone freeze 추가
     if opt.freeze: # backbone freeze
         freeze = ['model.%s.' % x for x in range(12)]
     else:
         freeze = []  # parameter names to freeze (full or partial)
+    #########################################################################
     for k, v in model.named_parameters():
         v.requires_grad = True  # train all layers
         if any(x in k for x in freeze):
@@ -231,11 +237,14 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
         logger.info('Using SyncBatchNorm()')
 
     # Trainloader
+    #########################################################################
+    # TODO:crop_aug 옵션 추가
     dataloader, dataset = create_dataloader(train_path, imgsz, batch_size // WORLD_SIZE, gs, single_cls,
                                             hyp=hyp, augment=True, cache=opt.cache_images, rect=opt.rect, rank=RANK,
                                             workers=workers,
                                             image_weights=opt.image_weights, quad=opt.quad, prefix=colorstr('train: '),
                                             crop_aug=opt.crop_aug)
+    #########################################################################
     mlc = np.concatenate(dataset.labels, 0)[:, 0].max()  # max label class
     nb = len(dataloader)  # number of batches
     assert mlc < nc, 'Label class %g exceeds nc=%g in %s. Possible class labels are 0-%g' % (mlc, nc, data, nc - 1)
@@ -245,8 +254,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
         testloader = create_dataloader(test_path, imgsz_test, batch_size // WORLD_SIZE * 2, gs, single_cls,
                                        hyp=hyp, cache=opt.cache_images and not notest, rect=True, rank=-1,
                                        workers=workers,
-                                       pad=0.5, prefix=colorstr('val: '),
-                                       crop_aug=opt.crop_aug)[0]
+                                       pad=0.5, prefix=colorstr('val: '))[0]
 
         if not resume:
             labels = np.concatenate(dataset.labels, 0)
@@ -495,7 +503,7 @@ def parse_opt(known=False):
     parser.add_argument('--weights', type=str, default='yolov5s.pt', help='initial weights path')
     parser.add_argument('--cfg', type=str, default='', help='model.yaml path')
     parser.add_argument('--data', type=str, default='data/coco128.yaml', help='dataset.yaml path')
-    parser.add_argument('--hyp', type=str, default='data/hyps/hyp.scratch-p6.yaml', help='hyperparameters path')
+    parser.add_argument('--hyp', type=str, default='data/hyps/hyp.scratch.yaml', help='hyperparameters path')
     parser.add_argument('--epochs', type=int, default=300)
     parser.add_argument('--batch-size', type=int, default=16, help='total batch size for all GPUs')
     parser.add_argument('--img-size', nargs='+', type=int, default=[640, 640], help='[train, test] image sizes')
@@ -526,10 +534,14 @@ def parse_opt(known=False):
     parser.add_argument('--save_period', type=int, default=-1, help='Log model after every "save_period" epoch')
     parser.add_argument('--artifact_alias', type=str, default="latest", help='version of dataset artifact to be used')
     parser.add_argument('--local_rank', type=int, default=-1, help='DDP parameter, do not modify')
-
+    
+    #########################################################################
+    # TODO:crop_aug, freeze 옵션 추가
     # add for recycle
     parser.add_argument('--crop_aug', action='store_true', help='use crop_aug')
     parser.add_argument('--freeze', action='store_true', help='freeze')
+    #########################################################################
+
     opt = parser.parse_known_args()[0] if known else parser.parse_args()
     return opt
 
