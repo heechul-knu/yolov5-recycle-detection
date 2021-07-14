@@ -50,11 +50,11 @@ if self.train :
 ...
 
 def selfmix(self, img, labels, h, w):
-    # add imgs of cropped objects
-        # get cropped objects from the specific dataset.
-        # random size offset 
-        # add when a space is available
-    # add labels of cropped objects 
+    # get crop-obj, bbox
+    # augmentation of crop-obj with bbox
+    # get coordinates from 'img' to add crop-obj
+        # resize to add(optional)
+    # get 'img' added crop-obj, labels 
     return img, labels
 ```  
 ### result
