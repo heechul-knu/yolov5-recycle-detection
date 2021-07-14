@@ -10,9 +10,10 @@ source : [ultralytics/yolov5](https://github.com/ultralytics/yolov5)
 
 
 ## TODO 
-- [x] add `albumentation` for cropped objects  
-- [x] comparison batch-size, freeze, crop-aug-plus
-- [x] comparison rect, multi-scale, adam, sync-bn
+- [x] ~~add `albumentation` for cropped objects~~  
+- [x] comp1 : datasets(type1, type2, type3)
+- [ ] comp2 : pure vs crop-aug
+- [ ] comp2 : rect, multi-scale, adam, sync-bn
 
 ---
 

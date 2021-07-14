@@ -554,7 +554,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
     def selfmix(self, img, labels, h, w):
         # lables = [class, x,y,w,h]
         # h, w = height, width of img
-        xmin = min(labels[:,1]- labels[:,3]/2)
+        xmin = min(labels[:,1] - labels[:,3]/2)
         xmax = max(labels[:,1]+ labels[:,3]/2)
         ymin = min(labels[:,2] - labels[:,4]/2)
         ymax = max(labels[:,2]+ labels[:,4]/2)
@@ -631,24 +631,28 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         # 4. crop-aug 된 img 생성
             # p구역에 이미지 넣지 못 할 때
             if int((p[2]-x_img)*w) <= width or int((p[3]-y_img)*h) <= height:
-                # 더 튀어나온 방향 기준으로 scale 정함
-                scale_rate = min(int((p[2]-x_img)*w)/width, int((p[3]-y_img)*h)/height)
-                
-                album_resize =  A.Compose([
-                        A.Resize(int(height*scale_rate), int(width*scale_rate))
-                    ], bbox_params=A.BboxParams(format='yolo', label_fields=['class_labels']))
-                transformed = album_resize(image=cropped_object, bboxes=[cropped_label[1:]], class_labels=[cropped_label[0]])
-                
-                # resize 된 crop-obj
-                cropped_object = transformed['image']
-                cropped_label = [transformed['class_labels'][0]]+list(transformed['bboxes'][0])
+                # FIXME:threshold 값 정하기
+                if int((p[2]-x_img)*w) > 200 and int((p[3]-y_img)*h) > 200: # 200x200 이상인 경우에만 resize 적용  
+                    # 더 튀어나온 방향 기준으로 scale 정함
+                    scale_rate = min(int((p[2]-x_img)*w)/width, int((p[3]-y_img)*h)/height)
+                    
+                    album_resize =  A.Compose([
+                            A.Resize(int(height*scale_rate), int(width*scale_rate))
+                        ], bbox_params=A.BboxParams(format='yolo', label_fields=['class_labels']))
+                    transformed = album_resize(image=cropped_object, bboxes=[cropped_label[1:]], class_labels=[cropped_label[0]])
 
-                # resize 된 crop-object 크기
-                height = cropped_object.shape[0]
-                width = cropped_object.shape[1]
+                    # resize 된 crop-obj
+                    cropped_object = transformed['image']
+                    cropped_label = [transformed['class_labels'][0]]+list(transformed['bboxes'][0])
 
-                # bbox check
-                # self.save_image(cropped_object, cropped_label, 'crop_resize')
+                    # resize 된 crop-object 크기
+                    height = cropped_object.shape[0]
+                    width = cropped_object.shape[1]
+
+                    # bbox check
+                    # self.save_image(cropped_object, cropped_label, 'crop_resize')
+                else : # p구역이 200x200 보다 작은 경우 다음 구역으로
+                    continue
 
             # 좌표 수정
             cropped_label[1] = cropped_label[1]*width/w + x_img
