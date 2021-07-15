@@ -81,7 +81,8 @@ def run(data,
             data = yaml.safe_load(f)
 
         base_path = data['base']
-        data[task] = [base_path+x for x in data[task]]
+        for t in ['train', 'val', 'test']:
+            data[t] = [base_path+x for x in data[t]]
         
         check_dataset(data)  # check
 
@@ -113,8 +114,16 @@ def run(data,
     confusion_matrix = ConfusionMatrix(nc=nc)
     names = {k: v for k, v in enumerate(model.names if hasattr(model, 'names') else model.module.names)}
     coco91class = coco80_to_coco91_class()
-    s = ('%20s' + '%11s' * 6) % ('Class', 'Images', 'Labels', 'P', 'R', 'mAP@.5', 'mAP@.5:.95')
-    p, r, f1, mp, mr, map50, map, t0, t1, t2 = 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.
+    # s = ('%20s' + '%11s' * 6) % ('Class', 'Images', 'Labels', 'P', 'R', 'mAP@.5', 'mAP@.5:.95')
+
+###################################################################################
+# TODO:mean f1 score 추가
+    s = ('%20s' + '%11s' * 7) % ('Class', 'Images', 'Labels', 'P', 'R', 'mAP@.5', 'mAP@.5:.95', 'F1 score')
+
+    p, r, f1, mp, mr, mf1, map50, map, t0, t1, t2 = 0., 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.
+###################################################################################
+
+    # p, r, f1, mp, mr, map50, map, t0, t1, t2 = 0., 0., 0., 0., 0., 0., 0., 0., 0., 0.
     loss = torch.zeros(3, device=device)
     jdict, stats, ap, ap_class, wandb_images = [], [], [], [], []
     for batch_i, (img, targets, paths, shapes) in enumerate(tqdm(dataloader, desc=s)):
@@ -243,18 +252,39 @@ def run(data,
         p, r, ap, f1, ap_class = ap_per_class(*stats, plot=plots, save_dir=save_dir, names=names)
         ap50, ap = ap[:, 0], ap.mean(1)  # AP@0.5, AP@0.5:0.95
         mp, mr, map50, map = p.mean(), r.mean(), ap50.mean(), ap.mean()
+
+###################################################################################
+# TODO: mean f1 score 계산
+        mf1 = np.array(f1).mean()
+###################################################################################
+
         nt = np.bincount(stats[3].astype(np.int64), minlength=nc)  # number of targets per class
     else:
         nt = torch.zeros(1)
 
+###################################################################################
+# TODO:f1 score 출력
     # Print results
-    pf = '%20s' + '%11i' * 2 + '%11.3g' * 4  # print format
-    print(pf % ('all', seen, nt.sum(), mp, mr, map50, map))
+    pf = '%20s' + '%11i' * 2 + '%11.3g' * 5  # print format
+    print(pf % ('all', seen, nt.sum(), mp, mr, map50, map, mf1))
+###################################################################################
 
+    # Print results
+    # pf = '%20s' + '%11i' * 2 + '%11.3g' * 4  # print format
+    # print(pf % ('all', seen, nt.sum(), mp, mr, map50, map))
+
+###################################################################################
+# TODO:class별 f1 score 출력
     # Print results per class
     if (verbose or (nc < 50 and not training)) and nc > 1 and len(stats):
         for i, c in enumerate(ap_class):
-            print(pf % (names[c], seen, nt[c], p[i], r[i], ap50[i], ap[i]))
+            print(pf % (names[c], seen, nt[c], p[i], r[i], ap50[i], ap[i], f1[i]))
+###################################################################################
+
+    # Print results per class
+    # if (verbose or (nc < 50 and not training)) and nc > 1 and len(stats):
+    #     for i, c in enumerate(ap_class):
+    #         print(pf % (names[c], seen, nt[c], p[i], r[i], ap50[i], ap[i], f1[i]))
 
     # Print speeds
     t = tuple(x / seen * 1E3 for x in (t0, t1, t2))  # speeds per image
