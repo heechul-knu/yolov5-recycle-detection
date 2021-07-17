@@ -597,9 +597,11 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
             height = cropped_object.shape[0]
             width = cropped_object.shape[1]
             
+
             # crop 되기 전,후 크기 비율 곱
-            cropped_label = [lb[0], (lb[3]/2+offset_xmin)*w_l/width, (lb[4]/2+offset_ymin)*h_l/height,
-                                lb[3]*w_l/width, lb[4]*h_l/height] # class, x, y, w, h
+            bbox_coords = np.clip([(lb[3]/2+offset_xmin)*w_l/width, (lb[4]/2+offset_ymin)*h_l/height,
+                                lb[3]*w_l/width, lb[4]*h_l/height], 0, 1).tolist()
+            cropped_label = [lb[0]] + bbox_coords # class, x, y, w, h
 
             # bbox check
             # self.save_image(img.copy(), None, 'input')
