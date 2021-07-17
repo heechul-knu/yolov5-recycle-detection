@@ -30,7 +30,6 @@ from utils.torch_utils import torch_distributed_zero_first
 #########################################################################
 # TODO:for crop-obj augmentation
 import albumentations as A
-from PIL import Image, ImageDraw
 #########################################################################
 
 # Parameters
