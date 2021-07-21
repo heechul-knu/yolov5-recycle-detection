@@ -132,8 +132,10 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
     base_path = data_dict['base']
     train_path = [ base_path+x for x in data_dict['train']]
     data_dict['train'] = train_path
-    test_path = [ base_path+x for x in data_dict['val']]
-    data_dict['val'] = test_path
+    valid_path = [ base_path+x for x in data_dict['val']]
+    data_dict['val'] = valid_path
+    test_path = [ base_path+x for x in data_dict['test']]
+    data_dict['test'] = test_path
     #########################################################################
 
     with torch_distributed_zero_first(RANK):
@@ -251,10 +253,17 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
 
     # Process 0
     if RANK in [-1, 0]:
-        testloader = create_dataloader(test_path, imgsz_test, batch_size // WORLD_SIZE * 2, gs, single_cls,
+###################################################################################
+# TODO:add test result
+        validloader = create_dataloader(valid_path, imgsz_test, batch_size // WORLD_SIZE * 2, gs, single_cls,
                                        hyp=hyp, cache=opt.cache_images and not notest, rect=True, rank=-1,
                                        workers=workers,
                                        pad=0.5, prefix=colorstr('val: '))[0]
+        testloader = create_dataloader(test_path, imgsz_test, batch_size // WORLD_SIZE * 2, gs, single_cls,
+                                       hyp=hyp, cache=opt.cache_images and not notest, rect=True, rank=-1,
+                                       workers=workers,
+                                       pad=0.5, prefix=colorstr('test: '))[0]
+###################################################################################
 
         if not resume:
             labels = np.concatenate(dataset.labels, 0)
@@ -296,6 +305,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
 ###################################################################################
 # TODO:add f1 score
     results = (0, 0, 0, 0, 0, 0, 0, 0)  # P, R, mAP@.5, mAP@.5-.95, val_loss(box, obj, cls), F1 score
+    results_test = (0, 0, 0, 0, 0, 0, 0, 0)  # P, R, mAP@.5, mAP@.5-.95, test_loss(box, obj, cls), F1 score
 ###################################################################################
 
     # results = (0, 0, 0, 0, 0, 0, 0)  # P, R, mAP@.5, mAP@.5-.95, val_loss(box, obj, cls)
@@ -412,7 +422,22 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
             final_epoch = epoch + 1 == epochs
             if not notest or final_epoch:  # Calculate mAP
                 wandb_logger.current_epoch = epoch + 1
+###################################################################################
+# TODO:add test result
                 results, maps, _ = test.run(data_dict,
+                                            batch_size=batch_size // WORLD_SIZE * 2,
+                                            imgsz=imgsz_test,
+                                            model=ema.ema,
+                                            single_cls=single_cls,
+                                            dataloader=validloader,
+                                            save_dir=save_dir,
+                                            save_json=is_coco and final_epoch,
+                                            verbose=nc < 50 and final_epoch,
+                                            plots=plots and final_epoch,
+                                            wandb_logger=wandb_logger,
+                                            compute_loss=compute_loss)
+                
+                results_test, _ , _ = test.run(data_dict,
                                             batch_size=batch_size // WORLD_SIZE * 2,
                                             imgsz=imgsz_test,
                                             model=ema.ema,
@@ -427,14 +452,17 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
 
             # Write
             with open(results_file, 'a') as f:
-                f.write(s + '%10.4g' * 7 % results + '\n')  # append metrics, val_loss
+                f.write(s + '%10.4g' * 8 % results + '%10.4g' * 8 % results_test + '\n')  # append metrics, val_loss
 
             # Log
             tags = ['train/box_loss', 'train/obj_loss', 'train/cls_loss',  # train loss
                     'metrics/precision', 'metrics/recall', 'metrics/mAP_0.5', 'metrics/mAP_0.5:0.95',
-                    'val/box_loss', 'val/obj_loss', 'val/cls_loss',  # val loss
+                    'val/box_loss', 'val/obj_loss', 'val/cls_loss', 'metrics/f1score', # val loss
+                    'metrics/test_precision', 'metrics/test_recall', 'metrics/test_mAP_0.5', 'metrics/test_mAP_0.5:0.95',
+                    'test/box_loss', 'test/obj_loss', 'test/cls_loss',  'metrics/test_f1score', # test loss
                     'x/lr0', 'x/lr1', 'x/lr2']  # params
-            for x, tag in zip(list(mloss[:-1]) + list(results) + lr, tags):
+            for x, tag in zip(list(mloss[:-1]) + list(results) + list(results_test) + lr, tags):
+###################################################################################
                 if loggers['tb']:
                     loggers['tb'].add_scalar(tag, x, epoch)  # TensorBoard
                 if loggers['wandb']:
@@ -477,18 +505,22 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
                 wandb_logger.log({"Results": [loggers['wandb'].Image(str(save_dir / f), caption=f) for f in files
                                               if (save_dir / f).exists()]})
 
+
         if not evolve:
             if is_coco:  # COCO dataset
                 for m in [last, best] if best.exists() else [last]:  # speed, mAP tests
+###################################################################################
+# TODO: change loader (valid)
                     results, _, _ = test.run(data_dict,
                                              batch_size=batch_size // WORLD_SIZE * 2,
                                              imgsz=imgsz_test,
                                              model=attempt_load(m, device).half(),
                                              single_cls=single_cls,
-                                             dataloader=testloader,
+                                             dataloader=validloader,
                                              save_dir=save_dir,
                                              save_json=True,
                                              plots=False)
+###################################################################################
 
             # Strip optimizers
             for f in last, best:
