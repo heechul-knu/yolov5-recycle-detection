@@ -538,28 +538,39 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
 
 #########################################################################
 # TODO:save img for checking bbox 
-    def save_image(self, obj, lb, name):
-        height = obj.shape[0]
-        width = obj.shape[1]
+    def save_image(self, obj, lb, name, p=None):
+        h = obj.shape[0]
+        w = obj.shape[1]
 
         img = obj.copy()
-        lb = [int(x) for x in lb]
-        if lb is not None:
-            img = cv2.rectangle(img, (lb[1],lb[2]),
-                        (lb[1]+lb[3],lb[2]+lb[4]), (0,0,255), 2)
+        if p is not None:
+            for bbox in p:
+                img = cv2.rectangle(img, (bbox[0],bbox[1]),
+                        (bbox[2],bbox[3]), (0,255,0), 2)
+            if lb is not None:
+                for bbox in lb:
+                    bbox = [0, (bbox[1]-bbox[3]/2)*w, (bbox[2]-bbox[4]/2)*h, bbox[3]*w, bbox[4]*h]
+                    bbox = [int(x) for x in bbox]
+                    img = cv2.rectangle(img, (bbox[1],bbox[2]),
+                                (bbox[1]+bbox[3],bbox[2]+bbox[4]), (0,0,255), 2)                    
+        else:
+            if lb is not None:
+                lb = [int(x) for x in lb]
+                img = cv2.rectangle(img, (lb[1],lb[2]),
+                            (lb[1]+lb[3],lb[2]+lb[4]), (0,0,255), 2)
         cv2.imwrite(f"{name}.jpg", img)
 #########################################################################
 
 #########################################################################
 # TODO:func for crop_aug
-    def selfmix(self, img, labels, h, w):
+    def selfmix(self, img, labels, h, w, index):
         # lables = [class, x,y,w,h]
         # h, w = height, width of img
-        xmin = min(labels[:,1] - labels[:,3]/2)
-        xmax = max(labels[:,1]+ labels[:,3]/2)
-        ymin = min(labels[:,2] - labels[:,4]/2)
-        ymax = max(labels[:,2]+ labels[:,4]/2)
-
+        xmin = int(min(labels[:,1] - labels[:,3]/2) * w)
+        xmax = int(max(labels[:,1] + labels[:,3]/2) * w)
+        ymin = int(min(labels[:,2] - labels[:,4]/2) * h)
+        ymax = int(max(labels[:,2] + labels[:,4]/2) * h)
+        
         # crop-obj 넣을 빈 공간, 8곳
         # 1 2 3
         # 4 5 6
@@ -567,13 +578,13 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         Position = [
             [0,0,xmin,ymin],    # 1
             [xmin,0,xmax,ymin], # 2 
-            [xmax,0,1,ymin],    # 3
+            [xmax,0,w,ymin],    # 3
             [0,ymin,xmin,ymax], # 4
             # 5는 실제 obj
-            [xmax,ymin,1,ymax], # 6
-            [0,ymax,xmin,1],    # 7
-            [xmin,ymax,xmax,1], # 8
-            [xmax,ymax,1,1]     # 9
+            [xmax,ymin,w,ymax], # 6
+            [0,ymax,xmin,h],    # 7
+            [xmin,ymax,xmax,h], # 8
+            [xmax,ymax,w,h]     # 9
             ]
 
         # 구역마다 이미지 넣기
@@ -583,29 +594,34 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
             load_img, a, (h_l, w_l) = load_image(self, load_idx) 
             lb = self.labels[load_idx].copy()[np.random.randint(len(self.labels[load_idx]))]
 
+            xmin_load = int((lb[1]-lb[3]/2)*w_l)
+            xmax_load = int((lb[1]+lb[3]/2)*w_l)
+            ymin_load = int((lb[2]-lb[4]/2)*h_l)
+            ymax_load = int((lb[2]+lb[4]/2)*h_l)
+
             # 랜덤 크기의 offset 생성(4방향 다 다름)
-            offset = [np.random.randint(50,100) for _ in range(4)]
-            offset_xmin = np.clip(min(lb[1]-lb[3]/2, offset[0]/w_l), 0, 1)
-            offset_ymin = np.clip(min(lb[2]-lb[4]/2, offset[1]/h_l), 0, 1)
-            offset_xmax = np.clip(min(1-(lb[1]+lb[3]/2), offset[2]/w_l), 0, 1)
-            offset_ymax = np.clip(min(1-(lb[2]+lb[4]/2), offset[3]/h_l), 0, 1)
+            offset = [np.random.randint(30,100) for _ in range(4)]
+            offset_xmin = np.clip(min(xmin_load, offset[0]), 0, offset[0])
+            offset_xmax = np.clip(min(w_l - xmax_load, offset[1]), 0, offset[1])
+            offset_ymin = np.clip(min(ymin_load, offset[2]), 0, offset[2])
+            offset_ymax = np.clip(min(h_l - ymax_load, offset[3]), 0, offset[3])
             # normalize of load_img
 
             # 실제 crop된 이미지
-            cropped_object = load_img[int((lb[2]-lb[4]/2-offset_ymin)*h_l):int((lb[2]+lb[4]/2+offset_ymax)*h_l), 
-                                        int((lb[1]-lb[3]/2-offset_xmin)*w_l):int((lb[1]+lb[3]/2+offset_xmax)*w_l)].copy()
+            cropped_object = load_img[ymin_load - offset_ymin: ymax_load + offset_ymax,
+                                        xmin_load - offset_xmin: xmax_load + offset_xmax].copy()
 
             # crop-object 크기
             height = cropped_object.shape[0]
             width = cropped_object.shape[1]
 
             # crop 되기 전,후 크기 비율 곱
-            coco_bbox = [int(offset_xmin*w_l), int(offset_ymin*h_l), int(lb[3]*w_l), int(lb[4]*h_l)]
-            cropped_label = [lb[0]] + coco_bbox # class, x, y, w, h
+            cropped_label = [lb[0], offset_xmin, offset_ymin, xmax_load-xmin_load, ymax_load-ymin_load]
+            # class, x, y, w, h
 
             # bbox check
-            # self.save_image(img.copy(), None, f'{load_idx}_input')
-            # self.save_image(cropped_object, cropped_label, f'{load_idx}_crop_1')
+            # self.save_image(img.copy(), None, f'img/{index}_input')
+            # self.save_image(cropped_object, cropped_label, f'img/{load_idx}_crop_1')
 
         # 2. crop-obj albumentations
             # FIXME:augment 추가 여부
@@ -615,35 +631,46 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                     A.VerticalFlip(p=0.7),
                     A.ColorJitter(p=0.7)
                 ], bbox_params=A.BboxParams(format='coco', label_fields=['class_labels']))
-            transformed = album_aug(image=cropped_object, bboxes=[cropped_label[1:]], class_labels=[cropped_label[0]])
+            try:
+                transformed = album_aug(image=cropped_object, bboxes=[cropped_label[1:]], class_labels=[cropped_label[0]])
+            except:
+                print(f"aug error - bbox 좌표 : {cropped_label[1:]}")
+                print(f"이미지 크기 : {height} x {width}")
+                self.save_image(cropped_object, cropped_label, f'error_album')
+                continue
 
             # augment 된 crop-obj
             cropped_object = transformed['image']
             # bboxes = [(x,y,w,h), (x,y,w,h), ... ]
             # class_labels = [ c, c, ... ]
-            coco_bbox = list(transformed['bboxes'][0])
-            cropped_label = [transformed['class_labels'][0]] + coco_bbox
+            cropped_label = [transformed['class_labels'][0]] + list(transformed['bboxes'][0])
 
             # bbox check
-            # self.save_image(cropped_object, cropped_label, f'{load_idx}_crop_2_album')
+            # self.save_image(cropped_object, cropped_label, f'img/{load_idx}_crop_2_album')
 
         # 3. img에 넣을 위치 정하기
-            x_img = 0.5*np.random.rand()*(p[2]-p[0]) + p[0]
-            y_img = 0.5*np.random.rand()*(p[3]-p[1]) + p[1]
+            x_img = int(0.5*np.random.rand()*(p[2]-p[0])) + p[0]
+            y_img = int(0.5*np.random.rand()*(p[3]-p[1])) + p[1]
 
         # 4. crop-aug 된 img 생성
             # p구역에 이미지 넣지 못 할 때
-            if int((p[2]-x_img)*w) <= width or int((p[3]-y_img)*h) <= height:
+            if p[2]-x_img <= width or p[3]-y_img <= height:
                 # FIXME:threshold 값 정하기
                 # 200x200 이상인 경우에만 resize 적용
-                if int((p[2]-x_img)*w) > 200 and int((p[3]-y_img)*h) > 200:
+                if p[2]-x_img > 200 and p[3]-y_img > 200:
                     # 더 튀어나온 방향 기준으로 scale 정함
-                    scale_rate = min(int((p[2]-x_img)*w)/width, int((p[3]-y_img)*h)/height)
+                    scale_rate = min((p[2]-x_img)/width, (p[3]-y_img)/height)
 
                     album_resize =  A.Compose([
                             A.Resize(int(height*scale_rate), int(width*scale_rate))
                         ], bbox_params=A.BboxParams(format='coco', label_fields=['class_labels']))
-                    transformed = album_resize(image=cropped_object, bboxes=[cropped_label[1:]], class_labels=[cropped_label[0]])
+                    try:
+                        transformed = album_resize(image=cropped_object, bboxes=[cropped_label[1:]], class_labels=[cropped_label[0]])
+                    except:
+                        print(f"resize error - bbox 좌표 : {cropped_label[1:]}")
+                        print(f"이미지 크기 : {height} x {width}")
+                        self.save_image(cropped_object, cropped_label, f'error_resize')
+                        continue
 
                     # resize 된 crop-obj
                     cropped_object = transformed['image']
@@ -654,32 +681,38 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                     width = cropped_object.shape[1]
 
                     # bbox check
-                    # self.save_image(cropped_object, cropped_label, f'{load_idx}_crop_3_resize')
+                    # self.save_image(cropped_object, cropped_label, f'img/{load_idx}_crop_3_resize')
                 # 200x200 이하인 경우 다음 구역으로 
                 else:
                     continue
 
             # 좌표 수정
             # bbox_coords = [0, x_img*w+cropped_label[1], y_img*h+cropped_label[2], cropped_label[3], cropped_label[4]]
-            cropped_label[1] = x_img+(cropped_label[1] + cropped_label[3]/2)/w  # (crop 이미지 넣을 좌표 + offset 크기 + 넓이/2)
-            cropped_label[2] = y_img+(cropped_label[2] + cropped_label[4]/2)/h
+            cropped_label[1] = (x_img+cropped_label[1] + cropped_label[3]/2)/w  # (crop 이미지 넣을 좌표 + offset 크기 + 넓이/2)
+            cropped_label[2] = (y_img+cropped_label[2] + cropped_label[4]/2)/h
             cropped_label[3] = cropped_label[3]/w 
             cropped_label[4] = cropped_label[4]/h
-
-            # img에 crop-obj 삽입
-            try:
-                img[int(y_img*h):int(y_img*h)+height, int(x_img*w):int(x_img*w)+width] = cropped_object
-            except:
-                print(height, width)
-                print(cropped_object.shape)
-                exit()
 
             # label 추가
             labels = np.vstack((labels, np.array([cropped_label])))
 
+            # img에 crop-obj 삽입
+            try:
+                img[y_img:y_img+height, x_img:x_img+width] = cropped_object
+            except:
+                print(f"paste error - bbox 좌표 : {cropped_label[1:]}")
+                print(f"이미지 크기 : {img.shape[0]} x {img.shape[1]}")
+                print(f"crop 크기 : {height} x {width} (시작좌표 : {y_img},{x_img})")
+                print(f"max 좌표 : {y_img+height}, {x_img+width}")
+                self.save_image(img.copy(), labels, f'img/{index}_crop_4_scale', p=Position)
+                continue
+
+            # label 추가
+            # labels = np.vstack((labels, np.array([cropped_label])))
+
             # bbox check
-            # bbox_coords = [0, (cropped_label[1]-cropped_label[3]/2)*w, (cropped_label[2]-cropped_label[4]/2)*h, cropped_label[3]*w, cropped_label[4]*h]
-            # self.save_image(img.copy(), bbox_coords, f'{load_idx}_crop_4_scale')
+            # if index <= 10:
+            #     self.save_image(img.copy(), labels, f'img/{index}_crop_4_scale', p=Position)
 
         return img, labels
 #########################################################################
@@ -706,7 +739,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
 # TODO:crop_aug 적용(개별 이미지)
             labels = self.labels[index].copy() # labels 먼저 로드
             if self.crop_aug:
-                img , labels = self.selfmix(img, labels, h, w)
+                img , labels = self.selfmix(img, labels, h, w, index)
 #########################################################################
 
             # Letterbox
@@ -830,7 +863,7 @@ def load_mosaic(self, index):
         labels, segments = self.labels[index].copy(), self.segments[index].copy() # labels 먼저 로드
 
         if self.crop_aug:
-            img , labels = self.selfmix(img, labels, h, w)
+            img , labels = self.selfmix(img, labels, h, w, index)
 #########################################################################
 
         # place img in img4
@@ -894,7 +927,7 @@ def load_mosaic9(self, index):
         labels, segments = self.labels[index].copy(), self.segments[index].copy() # labels 먼저 로드
 
         if self.crop_aug:
-            img , labels = self.selfmix(img, labels, h, w)
+            img , labels = self.selfmix(img, labels, h, w, index)
 #########################################################################
 
         # place img in img9

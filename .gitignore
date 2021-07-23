@@ -2,6 +2,7 @@
 archive/
 runs/
 wandb/
+img/
 
 # cp file
 *.pt
