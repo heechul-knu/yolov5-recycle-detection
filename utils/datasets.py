@@ -635,8 +635,9 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                 transformed = album_aug(image=cropped_object, bboxes=[cropped_label[1:]], class_labels=[cropped_label[0]])
             except:
                 print(f"aug error - bbox 좌표 : {cropped_label[1:]}")
+                print(f"bbox 크기 : {lb[4]*h_l} x {lb[3]*w_l}")
                 print(f"이미지 크기 : {height} x {width}")
-                self.save_image(cropped_object, cropped_label, f'error_album')
+                self.save_image(cropped_object, cropped_label, f'error_{load_idx}_album')
                 continue
 
             # augment 된 crop-obj
@@ -668,8 +669,9 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                         transformed = album_resize(image=cropped_object, bboxes=[cropped_label[1:]], class_labels=[cropped_label[0]])
                     except:
                         print(f"resize error - bbox 좌표 : {cropped_label[1:]}")
+                        print(f"bbox 크기 : {cropped_label[3]} x {cropped_label[4]}")
                         print(f"이미지 크기 : {height} x {width}")
-                        self.save_image(cropped_object, cropped_label, f'error_resize')
+                        self.save_image(cropped_object, cropped_label, f'error_{load_idx}_resize')
                         continue
 
                     # resize 된 crop-obj
