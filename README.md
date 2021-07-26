@@ -12,8 +12,11 @@ source : [ultralytics/yolov5](https://github.com/ultralytics/yolov5)
 ## TODO 
 - [x] ~~add `albumentation` for cropped objects~~  
 - [x] ~~comp1 : datasets(type1, type2, type3)~~
-- [ ] comp2 : pure vs crop-aug
-- [ ] comp2 : rect, multi-scale, adam, sync-bn
+- [x] ~~comp2 : pure vs crop-aug~~
+- [x] ~~comp3 : rect, adam, sync-bn~~
+- [ ] comp4 : 100epochs, multi-scale
+- [ ] comp5 : rect + sync-bn + crop_aug
+- [ ] comp_ : hyperparemeter evolution
 
 ---
 
