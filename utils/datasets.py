@@ -637,7 +637,8 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                 print(f"aug error - bbox 좌표 : {cropped_label[1:]}")
                 print(f"bbox 크기 : {lb[4]*h_l} x {lb[3]*w_l}")
                 print(f"이미지 크기 : {height} x {width}")
-                self.save_image(cropped_object, cropped_label, f'error_{load_idx}_album')
+                print(f"crop 이미지 이름 : {self.img_files[load_idx]}")
+                self.save_image(cropped_object, cropped_label, f'img/error_{load_idx}_album')
                 continue
 
             # augment 된 crop-obj
@@ -671,7 +672,8 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                         print(f"resize error - bbox 좌표 : {cropped_label[1:]}")
                         print(f"bbox 크기 : {cropped_label[3]} x {cropped_label[4]}")
                         print(f"이미지 크기 : {height} x {width}")
-                        self.save_image(cropped_object, cropped_label, f'error_{load_idx}_resize')
+                        print(f"crop 이미지 이름 : {self.img_files[load_idx]}")
+                        self.save_image(cropped_object, cropped_label, f'img/error_{load_idx}_resize')
                         continue
 
                     # resize 된 crop-obj
@@ -706,6 +708,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                 print(f"이미지 크기 : {img.shape[0]} x {img.shape[1]}")
                 print(f"crop 크기 : {height} x {width} (시작좌표 : {y_img},{x_img})")
                 print(f"max 좌표 : {y_img+height}, {x_img+width}")
+                print(f"crop 이미지 이름 : {self.img_files[load_idx]}")
                 self.save_image(img.copy(), labels, f'img/{index}_crop_4_scale', p=Position)
                 continue
 

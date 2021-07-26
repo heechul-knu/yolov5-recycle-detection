@@ -485,6 +485,13 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
                         'optimizer': optimizer.state_dict(),
                         'wandb_id': wandb_logger.wandb_run.id if loggers['wandb'] else None}
 
+###################################################################################
+# TODO:매 epoch 마다 checkpoint 저장
+                # Save checkpoint every epoch
+                if opt.save_epochs:
+                    torch.save(ckpt, wdir / f'epoch_{epoch}.pt')
+###################################################################################
+
                 # Save last, best and delete
                 torch.save(ckpt, last)
                 if best_fitness == fi:
@@ -580,10 +587,11 @@ def parse_opt(known=False):
     parser.add_argument('--local_rank', type=int, default=-1, help='DDP parameter, do not modify')
     
     #########################################################################
-    # TODO:crop_aug, freeze 옵션 추가
+    # TODO:crop_aug, freeze, save_epochs 옵션 추가
     # add for recycle
     parser.add_argument('--crop_aug', action='store_true', help='use crop_aug')
     parser.add_argument('--freeze', action='store_true', help='freeze')
+    parser.add_argument('--save_epochs', action='store_true', help='save checkpiont every epochs')
     #########################################################################
 
     opt = parser.parse_known_args()[0] if known else parser.parse_args()
