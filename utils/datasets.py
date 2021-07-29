@@ -616,8 +616,8 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
             width = cropped_object.shape[1]
 
             # crop 되기 전,후 크기 비율 곱
-            cropped_label = [lb[0], offset_xmin, offset_ymin, xmax_load-xmin_load, ymax_load-ymin_load]
             # class, x, y, w, h
+            cropped_label = [lb[0], offset_xmin, offset_ymin, xmax_load-xmin_load, ymax_load-ymin_load]
 
             # bbox check
             # self.save_image(img.copy(), None, f'img/{index}_input')
@@ -629,7 +629,11 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
             album_aug =  A.Compose([
                     A.HorizontalFlip(p=0.7),
                     A.VerticalFlip(p=0.7),
-                    A.ColorJitter(p=0.7)
+                    A.ColorJitter(p=0.7),
+                    # add more augmentation
+                    A.ShiftScaleRotate(shift_limit=0.005, scale_limit=0.1, rotate_limit=5 , p=0.7),
+                    A.RandomBrightnessContrast(brightness_limit=0.1, contrast_limit=0.1, p=0.7),
+                    A.RGBShift(p=0.7)
                 ], bbox_params=A.BboxParams(format='coco', label_fields=['class_labels']))
             try:
                 transformed = album_aug(image=cropped_object, bboxes=[cropped_label[1:]], class_labels=[cropped_label[0]])
@@ -658,8 +662,9 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
             # p구역에 이미지 넣지 못 할 때
             if p[2]-x_img <= width or p[3]-y_img <= height:
                 # FIXME:threshold 값 정하기
-                # 200x200 이상인 경우에만 resize 적용
-                if p[2]-x_img > 200 and p[3]-y_img > 200:
+                # offset 평균 : 130(65x2), min object size : 20
+                # -> 150 x 150 이상인 경우에만 resize 적용
+                if p[2]-x_img > 150 and p[3]-y_img > 150:
                     # 더 튀어나온 방향 기준으로 scale 정함
                     scale_rate = min((p[2]-x_img)/width, (p[3]-y_img)/height)
 
@@ -686,7 +691,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
 
                     # bbox check
                     # self.save_image(cropped_object, cropped_label, f'img/{load_idx}_crop_3_resize')
-                # 200x200 이하인 경우 다음 구역으로 
+                # 150x150 이하인 경우 다음 구역으로 
                 else:
                     continue
 
@@ -709,15 +714,16 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                 print(f"crop 크기 : {height} x {width} (시작좌표 : {y_img},{x_img})")
                 print(f"max 좌표 : {y_img+height}, {x_img+width}")
                 print(f"crop 이미지 이름 : {self.img_files[load_idx]}")
-                self.save_image(img.copy(), labels, f'img/{index}_crop_4_scale', p=Position)
+                print(f"이미지 이름 : {self.img_files[index]}")
+                self.save_image(img.copy(), labels, f'img/{index}_crop_4_paste', p=Position)
                 continue
 
             # label 추가
             # labels = np.vstack((labels, np.array([cropped_label])))
 
             # bbox check
-            # if index <= 10:
-            #     self.save_image(img.copy(), labels, f'img/{index}_crop_4_scale', p=Position)
+            if index in [1, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000]:
+                self.save_image(img.copy(), labels, f'img/monitor_{index}', p=Position)
 
         return img, labels
 #########################################################################

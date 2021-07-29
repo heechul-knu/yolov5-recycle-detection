@@ -16,3 +16,4 @@ __pycache__/
 # for me
 *.sh
 *.ipynb
+check/
