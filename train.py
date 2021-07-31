@@ -129,19 +129,20 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
     
     #########################################################################
     # TODO:dataset 로드 방법 변경
-    base_path = data_dict['base']
-    train_path = [ base_path+x for x in data_dict['train']]
-    data_dict['train'] = train_path
-    valid_path = [ base_path+x for x in data_dict['val']]
-    data_dict['val'] = valid_path
-    test_path = [ base_path+x for x in data_dict['test']]
-    data_dict['test'] = test_path
-    #########################################################################
+    # base_path = data_dict['base']
+    # train_path = [ base_path+x for x in data_dict['train']]
+    # data_dict['train'] = train_path
+    # valid_path = [ base_path+x for x in data_dict['val']]
+    # data_dict['val'] = valid_path
+    # test_path = [ base_path+x for x in data_dict['test']]
+    # data_dict['test'] = test_path
 
     with torch_distributed_zero_first(RANK):
-        check_dataset(data_dict)  # check
-    # train_path = data_dict['train']
-    # test_path = data_dict['val']
+        data_dict = check_dataset(data_dict)  # check
+    train_path = data_dict['train']
+    valid_path = data_dict['val']
+    test_path = data_dict['test']
+    #########################################################################
 
     # Freeze
     #########################################################################

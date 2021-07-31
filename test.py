@@ -80,11 +80,14 @@ def run(data,
         with open(data) as f:
             data = yaml.safe_load(f)
 
-        base_path = data['base']
-        for t in ['train', 'val', 'test']:
-            data[t] = [base_path+x for x in data[t]]
+#####################################################################################
+# TODO: dataset 로드 방법 변경
+        # base_path = data['base']
+        # for t in ['train', 'val', 'test']:
+        #     data[t] = [base_path+x for x in data[t]]
         
-        check_dataset(data)  # check
+        data = check_dataset(data)  # check
+#####################################################################################
 
     # Half
     half &= device.type != 'cpu'  # half precision only supported on CUDA

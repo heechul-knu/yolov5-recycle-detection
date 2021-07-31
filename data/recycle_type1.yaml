@@ -1,4 +1,4 @@
-base : '/home/haejin/ssd_2/RecycleTrash/yolo/images/'
+path : '/home/haejin/ssd_2/RecycleTrash/yolo/images/'
 
 train: ['3rd', '4th', 'num', 'newpaperpack', 'newpet', 'pet_glass', '5th', '20201122', '20201203', '20201205', 'extra', 'joo_eun', 'newmix']
 val: ['kvl']

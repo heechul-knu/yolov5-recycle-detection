@@ -600,7 +600,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
             ymax_load = int((lb[2]+lb[4]/2)*h_l)
 
             # 랜덤 크기의 offset 생성(4방향 다 다름)
-            offset = [np.random.randint(30,100) for _ in range(4)]
+            offset = [np.random.randint(20,100) for _ in range(4)]
             offset_xmin = np.clip(min(xmin_load, offset[0]), 0, offset[0])
             offset_xmax = np.clip(min(w_l - xmax_load, offset[1]), 0, offset[1])
             offset_ymin = np.clip(min(ymin_load, offset[2]), 0, offset[2])
@@ -662,9 +662,9 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
             # p구역에 이미지 넣지 못 할 때
             if p[2]-x_img <= width or p[3]-y_img <= height:
                 # FIXME:threshold 값 정하기
-                # offset 평균 : 130(65x2), min object size : 20
-                # -> 150 x 150 이상인 경우에만 resize 적용
-                if p[2]-x_img > 150 and p[3]-y_img > 150:
+                # 최대 offset 평균 : 200(100x2), min object size : 20
+                # -> 220 x 220 이상인 경우에만 resize 적용
+                if p[2]-x_img > 220 and p[3]-y_img > 220:
                     # 더 튀어나온 방향 기준으로 scale 정함
                     scale_rate = min((p[2]-x_img)/width, (p[3]-y_img)/height)
 
@@ -691,7 +691,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
 
                     # bbox check
                     # self.save_image(cropped_object, cropped_label, f'img/{load_idx}_crop_3_resize')
-                # 150x150 이하인 경우 다음 구역으로 
+                # 220 x 220 이하인 경우 다음 구역으로 
                 else:
                     continue
 
