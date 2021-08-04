@@ -14,6 +14,8 @@ __pycache__/
 .ipynb_checkpoints/
 
 # for me
+# utils/datset_crop_by_ablum.py
+# utils/datset_crop_one_obj.py
 *.sh
 *.ipynb
 check/

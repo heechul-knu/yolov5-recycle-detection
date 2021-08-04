@@ -44,7 +44,7 @@ from utils.google_utils import attempt_download
 from utils.loss import ComputeLoss
 from utils.plots import plot_images, plot_labels, plot_results, plot_evolution
 from utils.torch_utils import ModelEMA, select_device, intersect_dicts, torch_distributed_zero_first, de_parallel
-from utils.wandb_logging.wandb_utils import WandbLogger, check_wandb_resume
+# from utils.wandb_logging.wandb_utils import WandbLogger, check_wandb_resume
 from utils.metrics import fitness
 
 logger = logging.getLogger(__name__)
@@ -89,7 +89,8 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
         data_dict = yaml.safe_load(f)  # data dict
 
     # Loggers
-    loggers = {'wandb': None, 'tb': None}  # loggers dict
+    # loggers = {'wandb': None, 'tb': None}  # loggers dict
+    loggers = {'tb': None}  # loggers dict
     if RANK in [-1, 0]:
         # TensorBoard
         if not evolve:
@@ -99,13 +100,13 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
 
         # W&B
         opt.hyp = hyp  # add hyperparameters
-        run_id = torch.load(weights).get('wandb_id') if weights.endswith('.pt') and os.path.isfile(weights) else None
-        run_id = run_id if opt.resume else None  # start fresh run if transfer learning
-        wandb_logger = WandbLogger(opt, save_dir.stem, run_id, data_dict)
-        loggers['wandb'] = wandb_logger.wandb
-        if loggers['wandb']:
-            data_dict = wandb_logger.data_dict
-            weights, epochs, hyp = opt.weights, opt.epochs, opt.hyp  # may update weights, epochs if resuming
+        # run_id = torch.load(weights).get('wandb_id') if weights.endswith('.pt') and os.path.isfile(weights) else None
+        # run_id = run_id if opt.resume else None  # start fresh run if transfer learning
+        # wandb_logger = WandbLogger(opt, save_dir.stem, run_id, data_dict)
+        # loggers['wandb'] = wandb_logger.wandb
+        # if loggers['wandb']:
+        #     data_dict = wandb_logger.data_dict
+        #     weights, epochs, hyp = opt.weights, opt.epochs, opt.hyp  # may update weights, epochs if resuming
 
     nc = 1 if single_cls else int(data_dict['nc'])  # number of classes
     names = ['item'] if single_cls and len(data_dict['names']) != 1 else data_dict['names']  # class names
@@ -406,9 +407,9 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
                         with warnings.catch_warnings():
                             warnings.simplefilter('ignore')  # suppress jit trace warning
                             loggers['tb'].add_graph(torch.jit.trace(de_parallel(model), imgs[0:1], strict=False), [])
-                elif plots and ni == 10 and loggers['wandb']:
-                    wandb_logger.log({'Mosaics': [loggers['wandb'].Image(str(x), caption=x.name) for x in
-                                                  save_dir.glob('train*.jpg') if x.exists()]})
+                # elif plots and ni == 10 and loggers['wandb']:
+                    # wandb_logger.log({'Mosaics': [loggers['wandb'].Image(str(x), caption=x.name) for x in
+                    #                               save_dir.glob('train*.jpg') if x.exists()]})
 
             # end batch ------------------------------------------------------------------------------------------------
 
@@ -422,7 +423,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
             ema.update_attr(model, include=['yaml', 'nc', 'hyp', 'gr', 'names', 'stride', 'class_weights'])
             final_epoch = epoch + 1 == epochs
             if not notest or final_epoch:  # Calculate mAP
-                wandb_logger.current_epoch = epoch + 1
+                # wandb_logger.current_epoch = epoch + 1
 ###################################################################################
 # TODO:add test result
                 results, maps, _ = test.run(data_dict,
@@ -435,7 +436,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
                                             save_json=is_coco and final_epoch,
                                             verbose=nc < 50 and final_epoch,
                                             plots=plots and final_epoch,
-                                            wandb_logger=wandb_logger,
+                                            # wandb_logger=wandb_logger,
                                             compute_loss=compute_loss)
                 
                 results_test, _ , _ = test.run(data_dict,
@@ -448,7 +449,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
                                             save_json=is_coco and final_epoch,
                                             verbose=nc < 50 and final_epoch,
                                             plots=plots and final_epoch,
-                                            wandb_logger=wandb_logger,
+                                            # wandb_logger=wandb_logger,
                                             compute_loss=compute_loss)
 
             # Write
@@ -466,14 +467,14 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
 ###################################################################################
                 if loggers['tb']:
                     loggers['tb'].add_scalar(tag, x, epoch)  # TensorBoard
-                if loggers['wandb']:
-                    wandb_logger.log({tag: x})  # W&B
+                # if loggers['wandb']:
+                #     wandb_logger.log({tag: x})  # W&B
 
             # Update best mAP
             fi = fitness(np.array(results).reshape(1, -1))  # weighted combination of [P, R, mAP@.5, mAP@.5-.95]
             if fi > best_fitness:
                 best_fitness = fi
-            wandb_logger.end_epoch(best_result=best_fitness == fi)
+            # wandb_logger.end_epoch(best_result=best_fitness == fi)
 
             # Save model
             if (not nosave) or (final_epoch and not evolve):  # if save
@@ -484,7 +485,8 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
                         'ema': deepcopy(ema.ema).half(),
                         'updates': ema.updates,
                         'optimizer': optimizer.state_dict(),
-                        'wandb_id': wandb_logger.wandb_run.id if loggers['wandb'] else None}
+                        'wandb_id': None}
+                        # 'wandb_id': wandb_logger.wandb_run.id if loggers['wandb'] else None}
 
 ###################################################################################
 # TODO:매 epoch 마다 checkpoint 저장
@@ -497,9 +499,9 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
                 torch.save(ckpt, last)
                 if best_fitness == fi:
                     torch.save(ckpt, best)
-                if loggers['wandb']:
-                    if ((epoch + 1) % opt.save_period == 0 and not final_epoch) and opt.save_period != -1:
-                        wandb_logger.log_model(last.parent, opt, epoch, fi, best_model=best_fitness == fi)
+                # if loggers['wandb']:
+                #     if ((epoch + 1) % opt.save_period == 0 and not final_epoch) and opt.save_period != -1:
+                #         wandb_logger.log_model(last.parent, opt, epoch, fi, best_model=best_fitness == fi)
                 del ckpt
 
         # end epoch ----------------------------------------------------------------------------------------------------
@@ -508,10 +510,10 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
         logger.info(f'{epoch - start_epoch + 1} epochs completed in {(time.time() - t0) / 3600:.3f} hours.\n')
         if plots:
             plot_results(save_dir=save_dir)  # save as results.png
-            if loggers['wandb']:
-                files = ['results.png', 'confusion_matrix.png', *[f'{x}_curve.png' for x in ('F1', 'PR', 'P', 'R')]]
-                wandb_logger.log({"Results": [loggers['wandb'].Image(str(save_dir / f), caption=f) for f in files
-                                              if (save_dir / f).exists()]})
+            # if loggers['wandb']:
+            #     files = ['results.png', 'confusion_matrix.png', *[f'{x}_curve.png' for x in ('F1', 'PR', 'P', 'R')]]
+            #     wandb_logger.log({"Results": [loggers['wandb'].Image(str(save_dir / f), caption=f) for f in files
+            #                                 if (save_dir / f).exists()]})
 
 
         if not evolve:
@@ -534,11 +536,11 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
             for f in last, best:
                 if f.exists():
                     strip_optimizer(f)  # strip optimizers
-            if loggers['wandb']:  # Log the stripped model
-                loggers['wandb'].log_artifact(str(best if best.exists() else last), type='model',
-                                              name='run_' + wandb_logger.wandb_run.id + '_model',
-                                              aliases=['latest', 'best', 'stripped'])
-        wandb_logger.finish_run()
+            # if loggers['wandb']:  # Log the stripped model
+            #     loggers['wandb'].log_artifact(str(best if best.exists() else last), type='model',
+            #                                   name='run_' + wandb_logger.wandb_run.id + '_model',
+            #                                   aliases=['latest', 'best', 'stripped'])
+        # wandb_logger.finish_run()
 
     torch.cuda.empty_cache()
     return results
@@ -607,8 +609,9 @@ def main(opt):
         check_requirements(exclude=['thop'])
 
     # Resume
-    wandb_run = check_wandb_resume(opt)
-    if opt.resume and not wandb_run:  # resume an interrupted run
+    # wandb_run = check_wandb_resume(opt)
+    # if opt.resume and not wandb_run:  # resume an interrupted run
+    if opt.resume:  # resume an interrupted run
         ckpt = opt.resume if isinstance(opt.resume, str) else get_latest_run()  # specified or most recent path
         assert os.path.isfile(ckpt), 'ERROR: --resume checkpoint does not exist'
         with open(Path(ckpt).parent.parent / 'opt.yaml') as f:

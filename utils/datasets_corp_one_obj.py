@@ -12,7 +12,6 @@ from itertools import repeat
 from multiprocessing.pool import ThreadPool, Pool
 from pathlib import Path
 from threading import Thread
-from albumentations.augmentations.crops.functional import crop
 
 import cv2
 import numpy as np
@@ -384,10 +383,6 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         self.path = path
         self.albumentations = Albumentations() if augment else None
 
-
-        self.cache_imgs = {}
-        self.cache_sizes = {}
-        self.cache_norm_sizes = {}
         self.crop_aug = crop_aug # for crop-obj
 #########################################################################
 
@@ -485,7 +480,6 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
 
         # Cache images into memory for faster training (WARNING: large datasets may exceed system RAM)
         self.imgs = [None] * n
-        self.img_hw0, self.img_hw = [None] * n, [None] * n
         if cache_images:
             gb = 0  # Gigabytes of cached images
             self.img_hw0, self.img_hw = [None] * n, [None] * n
@@ -560,15 +554,10 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                     img = cv2.rectangle(img, (bbox[1],bbox[2]),
                                 (bbox[1]+bbox[3],bbox[2]+bbox[4]), (0,0,255), 2)                    
         else:
-            if len(np.array(lb).shape) == 1:
+            if lb is not None:
                 lb = [int(x) for x in lb]
                 img = cv2.rectangle(img, (lb[1],lb[2]),
                             (lb[1]+lb[3],lb[2]+lb[4]), (0,0,255), 2)
-            else:
-                for bbox in lb:
-                    bbox = [int(x) for x in bbox]
-                    img = cv2.rectangle(img, (bbox[1],bbox[2]),
-                                (bbox[1]+bbox[3],bbox[2]+bbox[4]), (0,0,255), 2)   
         cv2.imwrite(f"{name}.jpg", img)
 #########################################################################
 
@@ -601,56 +590,38 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         # 구역마다 이미지 넣기
         for p in Position:
         # 1. crop-obj 생성
-            load_idx = torch.randint(len(self.indices), (1,)).item() # crop할 이미지 선정
-            load_img, _, (h_l, w_l) = load_image(self, load_idx) 
-            lb = self.labels[load_idx].copy()
-            idx_target_obj = torch.randint(len(self.labels[load_idx]), (1,)).item()
+            load_idx = np.random.choice(self.indices) # crop할 이미지 선정
+            load_img, a, (h_l, w_l) = load_image(self, load_idx) 
+            lb = self.labels[load_idx].copy()[np.random.randint(len(self.labels[load_idx]))]
 
-            # convert COCO format
-            lb[:,[1,3]] *= w_l
-            lb[:,[2,4]] *= h_l
-            lb[:,1] = lb[:,1] - lb[:,3]/2
-            lb[:,2] = lb[:,2] - lb[:,4]/2
-            lb = lb.astype(int)
-            # lb = np.concatenate([lb[:,1:], lb[:,0].reshape(len(lb[:,0]),1)], axis=1)
-
-            # target obejct 좌표
-            xmin_load = lb[idx_target_obj][1]
-            ymin_load = lb[idx_target_obj][2]
-            xmax_load = lb[idx_target_obj][1] + lb[idx_target_obj][3]
-            ymax_load = lb[idx_target_obj][2] + lb[idx_target_obj][4]
+            xmin_load = int((lb[1]-lb[3]/2)*w_l)
+            xmax_load = int((lb[1]+lb[3]/2)*w_l)
+            ymin_load = int((lb[2]-lb[4]/2)*h_l)
+            ymax_load = int((lb[2]+lb[4]/2)*h_l)
 
             # 랜덤 크기의 offset 생성(4방향 다 다름)
-            offset = torch.randint(low=30, high=100, size=(4,)).numpy()
-            offset_xmin = min(xmin_load, offset[0])
-            offset_ymin = min(ymin_load, offset[1])
-            offset_xmax = min(w_l - xmax_load, offset[2])
-            offset_ymax = min(h_l - ymax_load, offset[3])
+            offset = [np.random.randint(20,100) for _ in range(4)]
+            offset_xmin = np.clip(min(xmin_load, offset[0]), 0, offset[0])
+            offset_xmax = np.clip(min(w_l - xmax_load, offset[1]), 0, offset[1])
+            offset_ymin = np.clip(min(ymin_load, offset[2]), 0, offset[2])
+            offset_ymax = np.clip(min(h_l - ymax_load, offset[3]), 0, offset[3])
+            # normalize of load_img
 
-            # 특정 object 기준 crop
-            album_crop =  A.Compose([
-                    A.Crop(x_min=xmin_load - offset_xmin, x_max=xmax_load + offset_xmax,\
-                        y_min=ymin_load - offset_ymin, y_max=ymax_load + offset_ymax, p=1),
-                ], bbox_params=A.BboxParams(format='coco', label_fields=['class_labels'], min_area=200, min_visibility=0.3))
-            
-            transformed = album_crop(image=load_img, bboxes=lb[:,1:], class_labels=lb[:,0])
-
-            # crop 된 이미지
-            cropped_object = transformed['image']
-
-            # crop 후 annotation
-            album_label = np.array(transformed['class_labels']).reshape(len(transformed['class_labels']),1)
-            album_coord = transformed['bboxes']
-            cropped_label = np.concatenate([album_label, album_coord], axis=1)
+            # 실제 crop된 이미지
+            cropped_object = load_img[ymin_load - offset_ymin: ymax_load + offset_ymax,
+                                        xmin_load - offset_xmin: xmax_load + offset_xmax].copy()
 
             # crop-object 크기
             height = cropped_object.shape[0]
             width = cropped_object.shape[1]
 
+            # crop 되기 전,후 크기 비율 곱
+            # class, x, y, w, h
+            cropped_label = [lb[0], offset_xmin, offset_ymin, xmax_load-xmin_load, ymax_load-ymin_load]
+
             # bbox check
             # self.save_image(img.copy(), None, f'img/{index}_input')
-            # if index in range(100):
-            #     self.save_image(cropped_object, cropped_label, f'img/bbox/{index}_{load_idx}_crop_1')
+            # self.save_image(cropped_object, cropped_label, f'img/{load_idx}_crop_1')
 
         # 2. crop-obj albumentations
             # FIXME:augment 추가 여부
@@ -660,12 +631,12 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                     A.VerticalFlip(p=0.7),
                     A.ColorJitter(p=0.7),
                     # add more augmentation
-                    # A.ShiftScaleRotate(shift_limit=0.1, scale_limit=0.2, rotate_limit=5 , p=0.7),
+                    A.ShiftScaleRotate(shift_limit=0.005, scale_limit=0.1, rotate_limit=5 , p=0.7),
                     A.RandomBrightnessContrast(brightness_limit=0.1, contrast_limit=0.1, p=0.7),
                     A.RGBShift(p=0.7)
                 ], bbox_params=A.BboxParams(format='coco', label_fields=['class_labels']))
             try:
-                transformed = album_aug(image=cropped_object, bboxes=cropped_label[:,1:], class_labels=cropped_label[:,0])
+                transformed = album_aug(image=cropped_object, bboxes=[cropped_label[1:]], class_labels=[cropped_label[0]])
             except:
                 print(f"aug error - bbox 좌표 : {cropped_label[1:]}")
                 print(f"bbox 크기 : {lb[4]*h_l} x {lb[3]*w_l}")
@@ -676,20 +647,16 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
 
             # augment 된 crop-obj
             cropped_object = transformed['image']
-            album_label = np.array(transformed['class_labels']).reshape(len(transformed['class_labels']),1)
-            album_coord = transformed['bboxes']
-            cropped_label = np.concatenate([album_label, album_coord], axis=1)
-
-            # if height != cropped_object.shape[0] or width != cropped_object.shape[1]:
-            #     print(f"crop-obj 크기 변화 : {height} x {width} -> {cropped_object.shape}")
-            #     self.save_image(cropped_object, cropped_label, f'img/bbox/{load_idx}_crop_2_album_error')
+            # bboxes = [(x,y,w,h), (x,y,w,h), ... ]
+            # class_labels = [ c, c, ... ]
+            cropped_label = [transformed['class_labels'][0]] + list(transformed['bboxes'][0])
 
             # bbox check
-            # self.save_image(cropped_object, cropped_label, f'img/bbox/{load_idx}_crop_2_album')
+            # self.save_image(cropped_object, cropped_label, f'img/{load_idx}_crop_2_album')
 
         # 3. img에 넣을 위치 정하기
-            x_img = int(0.5*torch.rand((1,)).item()*(p[2]-p[0])) + p[0]
-            y_img = int(0.5*torch.rand((1,)).item()*(p[3]-p[1])) + p[1]
+            x_img = int(0.5*np.random.rand()*(p[2]-p[0])) + p[0]
+            y_img = int(0.5*np.random.rand()*(p[3]-p[1])) + p[1]
 
         # 4. crop-aug 된 img 생성
             # p구역에 이미지 넣지 못 할 때
@@ -705,7 +672,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                             A.Resize(int(height*scale_rate), int(width*scale_rate))
                         ], bbox_params=A.BboxParams(format='coco', label_fields=['class_labels']))
                     try:
-                        transformed = album_resize(image=cropped_object, bboxes=cropped_label[:,1:], class_labels=cropped_label[:,0])
+                        transformed = album_resize(image=cropped_object, bboxes=[cropped_label[1:]], class_labels=[cropped_label[0]])
                     except:
                         print(f"resize error - bbox 좌표 : {cropped_label[1:]}")
                         print(f"bbox 크기 : {cropped_label[3]} x {cropped_label[4]}")
@@ -716,29 +683,27 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
 
                     # resize 된 crop-obj
                     cropped_object = transformed['image']
-                    album_label = np.array(transformed['class_labels']).reshape(len(transformed['class_labels']),1)
-                    album_coord = transformed['bboxes']
-                    cropped_label = np.concatenate([album_label, album_coord], axis=1)
+                    cropped_label = [transformed['class_labels'][0]]+list(transformed['bboxes'][0])
 
                     # resize 된 crop-object 크기
                     height = cropped_object.shape[0]
                     width = cropped_object.shape[1]
 
                     # bbox check
-                    # self.save_image(cropped_object, cropped_label, f'img/bbox/{load_idx}_crop_3_resize')
+                    # self.save_image(cropped_object, cropped_label, f'img/{load_idx}_crop_3_resize')
                 # 220 x 220 이하인 경우 다음 구역으로 
                 else:
                     continue
 
             # 좌표 수정
             # bbox_coords = [0, x_img*w+cropped_label[1], y_img*h+cropped_label[2], cropped_label[3], cropped_label[4]]
-            cropped_label[:,1] = (x_img+cropped_label[:,1] + cropped_label[:,3]/2)/w
-            cropped_label[:,2] = (y_img+cropped_label[:,2] + cropped_label[:,4]/2)/h
-            cropped_label[:,3] = cropped_label[:,3]/w 
-            cropped_label[:,4] = cropped_label[:,4]/h
+            cropped_label[1] = (x_img+cropped_label[1] + cropped_label[3]/2)/w  # (crop 이미지 넣을 좌표 + offset 크기 + 넓이/2)
+            cropped_label[2] = (y_img+cropped_label[2] + cropped_label[4]/2)/h
+            cropped_label[3] = cropped_label[3]/w 
+            cropped_label[4] = cropped_label[4]/h
 
             # label 추가
-            labels = np.concatenate((labels, cropped_label), axis=0)
+            labels = np.vstack((labels, np.array([cropped_label])))
 
             # img에 crop-obj 삽입
             try:
@@ -750,16 +715,15 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                 print(f"max 좌표 : {y_img+height}, {x_img+width}")
                 print(f"crop 이미지 이름 : {self.img_files[load_idx]}")
                 print(f"이미지 이름 : {self.img_files[index]}")
-                self.save_image(img.copy(), labels, f'img/bbox/{index}_crop_4_paste', p=Position)
+                self.save_image(img.copy(), labels, f'img/{index}_crop_4_paste', p=Position)
                 continue
 
             # label 추가
             # labels = np.vstack((labels, np.array([cropped_label])))
 
             # bbox check
-            # if index in range(100):
-            #    self.save_image(img.copy(), labels, f'img/bbox/{index}_monitor', p=Position)
-            #    self.save_image(img.copy(), labels, f'img/monitor_{index}', p=Position)
+            if index in [1, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000]:
+                self.save_image(img.copy(), labels, f'img/monitor_{index}', p=Position)
 
         return img, labels
 #########################################################################
@@ -880,7 +844,6 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
 def load_image(self, index):
     # loads 1 image from dataset, returns img, original hw, resized hw
     img = self.imgs[index]
-    
     if img is None:  # not cached
         path = self.img_files[index]
         img = cv2.imread(path)  # BGR
@@ -890,11 +853,6 @@ def load_image(self, index):
         if r != 1:  # if sizes are not equal
             img = cv2.resize(img, (int(w0 * r), int(h0 * r)),
                              interpolation=cv2.INTER_AREA if r < 1 and not self.augment else cv2.INTER_LINEAR)
-        
-        self.imgs[index] = img
-        self.img_hw0[index] = (h0, w0)
-        self.img_hw[index] = img.shape[:2]
-        
         return img, (h0, w0), img.shape[:2]  # img, hw_original, hw_resized
     else:
         return self.imgs[index], self.img_hw0[index], self.img_hw[index]  # img, hw_original, hw_resized
