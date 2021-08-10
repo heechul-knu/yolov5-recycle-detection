@@ -87,6 +87,16 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
     init_seeds(1 + RANK)
     with open(data) as f:
         data_dict = yaml.safe_load(f)  # data dict
+    #########################################################################
+    # TODO: for new dataset
+        if data.split('/')[-1] == 'recycle_new.yaml':
+            all_dir_list = os.listdir(data_dict['path'])
+
+            for dirname in all_dir_list:
+                if dirname in data_dict['val'] or dirname in data_dict['test']:
+                    all_dir_list.remove(dirname)
+            data_dict['train'] = all_dir_list
+    #########################################################################
 
     # Loggers
     # loggers = {'wandb': None, 'tb': None}  # loggers dict
