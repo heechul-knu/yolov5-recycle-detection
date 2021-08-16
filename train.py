@@ -268,13 +268,15 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
 ###################################################################################
 # TODO:add test result
         validloader = create_dataloader(valid_path, imgsz_test, batch_size // WORLD_SIZE * 2, gs, single_cls,
-                                       hyp=hyp, cache=opt.cache_images and not notest, rect=True, rank=-1,
-                                       workers=workers,
-                                       pad=0.5, prefix=colorstr('val: '))[0]
+                                        hyp=hyp, cache=False, # opt.cache_images and not notest, 
+                                        rect=True, rank=-1,
+                                        workers=workers,
+                                        pad=0.5, prefix=colorstr('val: '))[0]
         testloader = create_dataloader(test_path, imgsz_test, batch_size // WORLD_SIZE * 2, gs, single_cls,
-                                       hyp=hyp, cache=opt.cache_images and not notest, rect=True, rank=-1,
-                                       workers=workers,
-                                       pad=0.5, prefix=colorstr('test: '))[0]
+                                        hyp=hyp, cache=False, # opt.cache_images and not notest,
+                                        rect=True, rank=-1,
+                                        workers=workers,
+                                        pad=0.5, prefix=colorstr('test: '))[0]
 ###################################################################################
 
         if not resume:

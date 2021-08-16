@@ -1,7 +1,7 @@
 path : '../../../ssd_2/RecycleTrash/yolo/images/'
 
-train: []
-val: ['5th', '20201122', '20201203', '20201205', 'extra', 'joo_eun', 'newmix']
+train: ['test']
+val: ['test']
 test: ['test']
 
 nc: 7

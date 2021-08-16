@@ -38,6 +38,7 @@ help_url = 'https://github.com/ultralytics/yolov5/wiki/Train-Custom-Data'
 img_formats = ['bmp', 'jpg', 'jpeg', 'png', 'tif', 'tiff', 'dng', 'webp', 'mpo']  # acceptable image suffixes
 vid_formats = ['mov', 'avi', 'mp4', 'mpg', 'mpeg', 'm4v', 'wmv', 'mkv']  # acceptable video suffixes
 num_threads = min(8, os.cpu_count())  # number of multiprocessing threads
+# num_threads = min(8, os.cpu_count())  # number of multiprocessing threads
 logger = logging.getLogger(__name__)
 
 # Get orientation exif tag
@@ -113,7 +114,8 @@ def create_dataloader(path, imgsz, batch_size, stride, single_cls=False, hyp=Non
                                       crop_aug = crop_aug)
 #########################################################################
     batch_size = min(batch_size, len(dataset))
-    nw = min([os.cpu_count(), batch_size if batch_size > 1 else 0, workers])  # number of workers
+    nw = workers
+    # nw = min([os.cpu_count(), batch_size if batch_size > 1 else 0, workers])  # number of workers
     sampler = torch.utils.data.distributed.DistributedSampler(dataset) if rank != -1 else None
     loader = torch.utils.data.DataLoader if image_weights else InfiniteDataLoader
     # Use torch.utils.data.DataLoader() if dataset.properties will update during training else InfiniteDataLoader()
@@ -367,8 +369,8 @@ def img2label_paths(img_paths):
     return [sb.join(x.rsplit(sa, 1)).rsplit('.', 1)[0] + '.txt' for x in img_paths]
 
 
-#########################################################################
-# TODO:crop_aug 옵션 추가(Dataset)
+    #########################################################################
+    # TODO:crop_aug 옵션 추가(Dataset)
 class LoadImagesAndLabels(Dataset):  # for training/testing
     def __init__(self, path, img_size=640, batch_size=16, augment=False, hyp=None, rect=False, image_weights=False,
                  cache_images=False, single_cls=False, stride=32, pad=0.0, prefix='', crop_aug=False):
@@ -384,19 +386,19 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         self.albumentations = Albumentations() if augment else None
 
         self.crop_aug = crop_aug # for crop-obj
-#########################################################################
+        #########################################################################
 
         try:
             f = []  # image files
             for p in path if isinstance(path, list) else [path]:
                 p = Path(p)  # os-agnostic
                 if p.is_dir():  # dir
-#########################################################################
-# TODO:dataset 로드 방법 변경
+                    #########################################################################
+                    # TODO:dataset 로드 방법 변경
                     temp = glob.glob(str(p / '**' / '*.*'), recursive=True)
                     for idx, file in enumerate(temp):
                         f.append(file)
-#########################################################################
+                    #########################################################################
                     # f += glob.glob(str(p / '**' / '*.*'), recursive=True)
                     # f = list(p.rglob('**/*.*'))  # pathlib
                 elif p.is_file():  # file
@@ -416,11 +418,11 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         # Check cache
         self.label_files = img2label_paths(self.img_files)  # labels
         cache_path = (p if p.is_file() else Path(self.label_files[0]).parent).with_suffix('.cache')
-#########################################################################
-# TODO:cache 파일 지우기(dataset 정해지면 comment 처리)
+        #########################################################################
+        # TODO:cache 파일 지우기(dataset 정해지면 comment 처리)
         if os.path.isfile(cache_path): # remove cache
             os.remove(cache_path) 
-#########################################################################
+        #########################################################################
         try:
             cache, exists = np.load(cache_path, allow_pickle=True).item(), True  # load dict
             assert cache['version'] == 0.4 and cache['hash'] == get_hash(self.label_files + self.img_files)
@@ -537,8 +539,8 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
     #     #self.shuffled_vector = np.random.permutation(self.nF) if self.augment else np.arange(self.nF)
     #     return self
 
-#########################################################################
-# TODO:save img for checking bbox 
+    #########################################################################
+    # TODO:save img for checking bbox 
     def save_image(self, obj, lb, name, p=None):
         h = obj.shape[0]
         w = obj.shape[1]
@@ -560,10 +562,10 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                 img = cv2.rectangle(img, (lb[1],lb[2]),
                             (lb[1]+lb[3],lb[2]+lb[4]), (0,0,255), 2)
         cv2.imwrite(f"{name}.jpg", img)
-#########################################################################
+    #########################################################################
 
-#########################################################################
-# TODO:func for crop_aug
+    #########################################################################
+    # TODO:func for crop_aug
     def selfmix(self, img, labels, h, w, index):
         # lables = [class, x,y,w,h]
         # h, w = height, width of img
@@ -593,7 +595,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         # 1. crop-obj 생성
             load_idx =  torch.randint(len(self.indices), (1,)).item() # crop할 이미지 선정
             load_img, a, (h_l, w_l) = load_image(self, load_idx) 
-            lb = torch.randint(len(self.labels[load_idx]), (1,)).item()
+            lb = self.labels[load_idx].copy()[torch.randint(len(self.labels[load_idx]), (1,)).item()]
 
             xmin_load = int((lb[1]-lb[3]/2)*w_l)
             xmax_load = int((lb[1]+lb[3]/2)*w_l)
@@ -601,7 +603,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
             ymax_load = int((lb[2]+lb[4]/2)*h_l)
 
             # 랜덤 크기의 offset 생성(4방향 다 다름)
-            offset = torch.randint(low=30, high=100, size=(4,)).numpy()
+            offset = torch.randint(low=int(self.img_size/40), high=int(self.img_size/10), size=(4,)).numpy()
             offset_xmin = np.clip(min(xmin_load, offset[0]), 0, offset[0])
             offset_xmax = np.clip(min(w_l - xmax_load, offset[1]), 0, offset[1])
             offset_ymin = np.clip(min(ymin_load, offset[2]), 0, offset[2])
@@ -664,8 +666,9 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
             if p[2]-x_img <= width or p[3]-y_img <= height:
                 # FIXME:threshold 값 정하기
                 # 최대 offset 평균 : 200(100x2), min object size : 20
-                # -> 220 x 220 이상인 경우에만 resize 적용
-                if p[2]-x_img > 220 and p[3]-y_img > 220:
+                # -> 200 x 200 이상인 경우에만 resize 적용
+                # -> self.img_size/10 x self.img_size/10 이상인 경우에만 resize 적용
+                if p[2]-x_img > self.img_size/10 and p[3]-y_img > self.img_size/10:
                     # 더 튀어나온 방향 기준으로 scale 정함
                     scale_rate = min((p[2]-x_img)/width, (p[3]-y_img)/height)
 
@@ -723,7 +726,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
             # labels = np.vstack((labels, np.array([cropped_label])))
 
             # bbox check
-            if index in [1, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000]:
+            if index in range(10,101,10):
                 self.save_image(img.copy(), labels, f'img/monitor_{index}', p=Position)
 
         return img, labels
