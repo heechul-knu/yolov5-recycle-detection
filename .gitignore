@@ -4,8 +4,9 @@ runs/
 wandb/
 img/
 
-# cp file
+# cp and config file
 *.pt
+recycle_*.yaml
 
 # temp
 __pycache__/
