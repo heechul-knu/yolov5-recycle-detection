@@ -254,7 +254,7 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
     #########################################################################
     # TODO:crop_aug 옵션 추가
     dataloader, dataset = create_dataloader(train_path, imgsz, batch_size // WORLD_SIZE, gs, single_cls,
-                                            hyp=hyp, augment=True, cache=opt.cache_images, rect=opt.rect, rank=RANK,
+                                            hyp=hyp, augment=opt.mosaic, cache=opt.cache_images, rect=opt.rect, rank=RANK,
                                             workers=workers,
                                             image_weights=opt.image_weights, quad=opt.quad, prefix=colorstr('train: '),
                                             crop_aug=opt.crop_aug)
@@ -605,6 +605,7 @@ def parse_opt(known=False):
     # TODO:crop_aug, freeze, save_epochs 옵션 추가
     # add for recycle
     parser.add_argument('--crop_aug', action='store_true', help='use crop_aug')
+    parser.add_argument('--mosaic', action='store_true', help='use mosaic')
     parser.add_argument('--freeze', action='store_true', help='freeze')
     parser.add_argument('--save_epochs', action='store_true', help='save checkpiont every epochs')
     #########################################################################
