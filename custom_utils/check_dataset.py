@@ -34,6 +34,19 @@ new = {
 'valid_list':['5th', '20201122', '20201203', '20201205', 'extra', 'joo_eun', 'newmix'],
 'test_list':['test']
 }
+
+data_0727 = {
+'train_list':['3rd', '4th', 'num', 'newpaperpack', 'newpet', 'pet_glass', 'kvl', '20210727_easy', '20210727_hard'],
+'valid_list':['5th', '20201122', '20201203', '20201205', 'extra', 'joo_eun', 'newmix'],
+'test_list':['test']
+}
+
+data_0809 = {
+'train_list':['3rd', '4th', 'num', 'newpaperpack', 'newpet', 'pet_glass', 'kvl', '20210727_easy', '20210727_hard', '20210809_easy', '20210809_hard'],
+'valid_list':['5th', '20201122', '20201203', '20201205', 'extra', 'joo_eun', 'newmix'],
+'test_list':['test']
+}
+
 new['train_list'] = os.listdir(base_path)
 for dirname in new['train_list']:
     if dirname in new['valid_list'] or dirname in new['test_list']:
