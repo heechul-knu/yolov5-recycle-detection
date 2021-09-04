@@ -47,11 +47,18 @@ data_0809 = {
 'test_list':['test']
 }
 
-new['train_list'] = os.listdir(base_path)
-for dirname in new['train_list']:
-    if dirname in new['valid_list'] or dirname in new['test_list']:
-        new['train_list'].remove(dirname)
+data_extra = {
+    'train_list':[],
+    'valid_list':['5th', '20201122', '20201203', '20201205', 'extra', 'joo_eun', 'newmix'],
+    'test_list':['test']
+}
 
+all_dir_list = os.listdir(base_path)
+for dirname in all_dir_list:
+    if dirname in new['valid_list'] or dirname in new['test_list'] or 'cache' in dirname:
+        pass
+    else :
+        new['train_list'].append(dirname)
 
 class Colors:
     # Ultralytics color palette https://ultralytics.com/

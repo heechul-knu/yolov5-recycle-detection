@@ -35,7 +35,7 @@ def run(data,
         imgsz=640,  # inference size (pixels)
         conf_thres=0.001,  # confidence threshold
         iou_thres=0.6,  # NMS IoU threshold
-        task='val',  # train, val, test, speed or study
+        task='test',  # train, val, test, speed or study
         device='',  # cuda device, i.e. 0 or 0,1,2,3 or cpu
         single_cls=False,  # treat as single-class dataset
         augment=False,  # augmented inference
@@ -77,8 +77,20 @@ def run(data,
         #     model = nn.DataParallel(model)
 
         # Data
+        data_path = data
         with open(data) as f:
             data = yaml.safe_load(f)
+        #########################################################################
+        # TODO: for new dataset
+            if data_path.split('/')[-1] == 'recycle_new.yaml':
+                all_dir_list = os.listdir(data['path'])
+
+                for dirname in all_dir_list:
+                    if dirname in data['val'] or dirname in data['test'] or 'cache' in dirname:
+                        pass
+                    else :
+                        data['train'].append(dirname)
+        #########################################################################
 
 #####################################################################################
 # TODO: dataset 로드 방법 변경

@@ -93,9 +93,10 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
             all_dir_list = os.listdir(data_dict['path'])
 
             for dirname in all_dir_list:
-                if dirname in data_dict['val'] or dirname in data_dict['test']:
-                    all_dir_list.remove(dirname)
-            data_dict['train'] = all_dir_list
+                if dirname in data_dict['val'] or dirname in data_dict['test'] or 'cache' in dirname:
+                    pass
+                else :
+                    data_dict['train'].append(dirname)
     #########################################################################
 
     # Loggers

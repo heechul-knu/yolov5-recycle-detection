@@ -122,18 +122,25 @@ class Model(nn.Module):
             return self.forward_augment(x)  # augmented inference, None
         return self.forward_once(x, profile, visualize)  # single-scale inference, train
 
+    ####################################################################################################
     def forward_augment(self, x):
         img_size = x.shape[-2:]  # height, width
-        s = [1, 0.83, 0.67]  # scales
-        f = [None, 3, None]  # flips (2-ud, 3-lr)
+        s = [0.67, 1, 1.33]
+        # s = [1, 0.83, 0.67]  # scales
+        f = [None, 2, 3]  # flips (2-ud, 3-lr)
+        # f = [None, 3, None]  # flips (2-ud, 3-lr)
         y = []  # outputs
-        for si, fi in zip(s, f):
-            xi = scale_img(x.flip(fi) if fi else x, si, gs=int(self.stride.max()))
-            yi = self.forward_once(xi)[0]  # forward
-            # cv2.imwrite(f'img_{si}.jpg', 255 * xi[0].cpu().numpy().transpose((1, 2, 0))[:, :, ::-1])  # save
-            yi = self._descale_pred(yi, fi, si, img_size)
-            y.append(yi)
+        # for si, fi in zip(s, f):
+        for si in s:
+            for fi in f:
+                xi = scale_img(x.flip(fi) if fi else x, si, gs=int(self.stride.max()))
+                yi = self.forward_once(xi)[0]  # forward
+                # cv2.imwrite(f'img_{si}.jpg', 255 * xi[0].cpu().numpy().transpose((1, 2, 0))[:, :, ::-1])  # save
+                yi = self._descale_pred(yi, fi, si, img_size)
+                y.append(yi)
         return torch.cat(y, 1), None  # augmented inference, train
+    ####################################################################################################
+
 
     def forward_once(self, x, profile=False, visualize=False):
         y, dt = [], []  # outputs
