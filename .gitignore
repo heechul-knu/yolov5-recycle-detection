@@ -1,22 +1,11 @@
-# log
-archive/
+# folder
 runs/
-wandb/
-img/
+custom/
 
-# cp and config file
-*.pt
-recycle_*.yaml
-
-# temp
+# cache
 __pycache__/
 .lh/
 .vscode/
-.ipynb_checkpoints/
 
-# for me
-# utils/datset_crop_by_ablum.py
-# utils/datset_crop_one_obj.py
-*.sh
-*.ipynb
-check/
+# ckpt
+*.pt

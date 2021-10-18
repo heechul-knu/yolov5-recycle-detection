@@ -1,4 +1,7 @@
-# YOLOv5 dataset utils and dataloaders
+# YOLOv5 🚀 by Ultralytics, GPL-3.0 license
+"""
+Dataloaders and dataset utils
+"""
 
 import glob
 import hashlib
@@ -22,24 +25,22 @@ from PIL import Image, ExifTags
 from torch.utils.data import Dataset
 from tqdm import tqdm
 
-from utils.augmentations import Albumentations, augment_hsv, copy_paste, letterbox, mixup, random_perspective, cutout
-from utils.general import check_requirements, check_file, check_dataset, xywh2xyxy, xywhn2xyxy, xyxy2xywhn, \
-    xyn2xy, segments2boxes, clean_str
+from utils.augmentations import Albumentations, augment_hsv, copy_paste, letterbox, mixup, random_perspective
+from utils.general import check_dataset, check_requirements, check_yaml, clean_str, segments2boxes, \
+    xywh2xyxy, xywhn2xyxy, xyxy2xywhn, xyn2xy
 from utils.torch_utils import torch_distributed_zero_first
 
-#########################################################################
-# TODO:for crop-obj augmentation
+#######################################
+# TODO: ImbalancedDatasetSampler, bbox-cutmix 추가
+from custom.imbalanced import ImbalancedDatasetSampler
 import albumentations as A
-from PIL import ImageDraw
-#########################################################################
+#######################################
 
 # Parameters
-help_url = 'https://github.com/ultralytics/yolov5/wiki/Train-Custom-Data'
-img_formats = ['bmp', 'jpg', 'jpeg', 'png', 'tif', 'tiff', 'dng', 'webp', 'mpo']  # acceptable image suffixes
-vid_formats = ['mov', 'avi', 'mp4', 'mpg', 'mpeg', 'm4v', 'wmv', 'mkv']  # acceptable video suffixes
-num_threads = min(8, os.cpu_count())  # number of multiprocessing threads
-# num_threads = min(8, os.cpu_count())  # number of multiprocessing threads
-logger = logging.getLogger(__name__)
+HELP_URL = 'https://github.com/ultralytics/yolov5/wiki/Train-Custom-Data'
+IMG_FORMATS = ['bmp', 'jpg', 'jpeg', 'png', 'tif', 'tiff', 'dng', 'webp', 'mpo']  # acceptable image suffixes
+VID_FORMATS = ['mov', 'avi', 'mp4', 'mpg', 'mpeg', 'm4v', 'wmv', 'mkv']  # acceptable video suffixes
+NUM_THREADS = min(8, os.cpu_count())  # number of multiprocessing threads
 
 # Get orientation exif tag
 for orientation in ExifTags.TAGS.keys():
@@ -95,28 +96,42 @@ def exif_transpose(image):
             image.info["exif"] = exif.tobytes()
     return image
 
-#########################################################################
-# TODO:crop_aug 옵션 추가(dataloader)
+
 def create_dataloader(path, imgsz, batch_size, stride, single_cls=False, hyp=None, augment=False, cache=False, pad=0.0,
-                      rect=False, rank=-1, workers=8, image_weights=False, quad=False, prefix='', crop_aug=False):
+                      rect=False, rank=-1, workers=8, image_weights=False, quad=False, prefix='', save_dir=None):
     # Make sure only the first process in DDP process the dataset first, and the following others can use the cache
+    
     with torch_distributed_zero_first(rank):
         dataset = LoadImagesAndLabels(path, imgsz, batch_size,
-                                      augment=augment,  # augment images
-                                      hyp=hyp,  # augmentation hyperparameters
-                                      rect=rect,  # rectangular training
-                                      cache_images=cache,
-                                      single_cls=single_cls,
-                                      stride=int(stride),
-                                      pad=pad,
-                                      image_weights=image_weights,
-                                      prefix=prefix,
-                                      crop_aug = crop_aug)
-#########################################################################
+                                    augment=augment,  # augment images
+                                    hyp=hyp,  # augmentation hyperparameters
+                                    rect=rect,  # rectangular training
+                                    cache_images=cache,
+                                    single_cls=single_cls,
+                                    stride=int(stride),
+                                    pad=pad,
+                                    image_weights=image_weights,
+                                    prefix=prefix,
+                                    dist=rank,
+                                    save_dir=save_dir)
+        # TODO: dataset mapping
+
+        # dataset.share_memory()
+    # import torch.distributed as dist
+    # dist.barrier()
+
     batch_size = min(batch_size, len(dataset))
-    nw = workers
-    # nw = min([os.cpu_count(), batch_size if batch_size > 1 else 0, workers])  # number of workers
-    sampler = torch.utils.data.distributed.DistributedSampler(dataset) if rank != -1 else None
+    nw = min([os.cpu_count(), batch_size if batch_size > 1 else 0, workers])  # number of workers
+
+    #######################################
+    # TODO: ImbalancedDatasetSampler 추가
+    if hyp is None :
+        sampler = torch.utils.data.distributed.DistributedSampler(dataset) if rank != -1 else None
+    else :
+        sampler = torch.utils.data.distributed.DistributedSampler(dataset) if rank != -1 else \
+            ImbalancedDatasetSampler(dataset) if hyp['imbalanced'] and augment else None
+    #######################################
+    
     loader = torch.utils.data.DataLoader if image_weights else InfiniteDataLoader
     # Use torch.utils.data.DataLoader() if dataset.properties will update during training else InfiniteDataLoader()
     dataloader = loader(dataset,
@@ -126,6 +141,7 @@ def create_dataloader(path, imgsz, batch_size, stride, single_cls=False, hyp=Non
                         pin_memory=True,
                         collate_fn=LoadImagesAndLabels.collate_fn4 if quad else LoadImagesAndLabels.collate_fn)
     return dataloader, dataset
+
 
 class InfiniteDataLoader(torch.utils.data.dataloader.DataLoader):
     """ Dataloader that reuses workers
@@ -162,8 +178,8 @@ class _RepeatSampler(object):
 
 
 class LoadImages:  # for inference
-    def __init__(self, path, img_size=640, stride=32):
-        p = str(Path(path).absolute())  # os-agnostic absolute path
+    def __init__(self, path, img_size=640, stride=32, auto=True):
+        p = str(Path(path).resolve())  # os-agnostic absolute path
         if '*' in p:
             files = sorted(glob.glob(p, recursive=True))  # glob
         elif os.path.isdir(p):
@@ -173,8 +189,8 @@ class LoadImages:  # for inference
         else:
             raise Exception(f'ERROR: {p} does not exist')
 
-        images = [x for x in files if x.split('.')[-1].lower() in img_formats]
-        videos = [x for x in files if x.split('.')[-1].lower() in vid_formats]
+        images = [x for x in files if x.split('.')[-1].lower() in IMG_FORMATS]
+        videos = [x for x in files if x.split('.')[-1].lower() in VID_FORMATS]
         ni, nv = len(images), len(videos)
 
         self.img_size = img_size
@@ -183,12 +199,13 @@ class LoadImages:  # for inference
         self.nf = ni + nv  # number of files
         self.video_flag = [False] * ni + [True] * nv
         self.mode = 'image'
+        self.auto = auto
         if any(videos):
             self.new_video(videos[0])  # new video
         else:
             self.cap = None
         assert self.nf > 0, f'No images or videos found in {p}. ' \
-                            f'Supported formats are:\nimages: {img_formats}\nvideos: {vid_formats}'
+                            f'Supported formats are:\nimages: {IMG_FORMATS}\nvideos: {VID_FORMATS}'
 
     def __iter__(self):
         self.count = 0
@@ -224,7 +241,7 @@ class LoadImages:  # for inference
             print(f'image {self.count}/{self.nf} {path}: ', end='')
 
         # Padded resize
-        img = letterbox(img0, self.img_size, stride=self.stride)[0]
+        img = letterbox(img0, self.img_size, stride=self.stride, auto=self.auto)[0]
 
         # Convert
         img = img.transpose((2, 0, 1))[::-1]  # HWC to CHW, BGR to RGB
@@ -283,7 +300,7 @@ class LoadWebcam:  # for inference
 
 
 class LoadStreams:  # multiple IP or RTSP cameras
-    def __init__(self, sources='streams.txt', img_size=640, stride=32):
+    def __init__(self, sources='streams.txt', img_size=640, stride=32, auto=True):
         self.mode = 'stream'
         self.img_size = img_size
         self.stride = stride
@@ -297,6 +314,7 @@ class LoadStreams:  # multiple IP or RTSP cameras
         n = len(sources)
         self.imgs, self.fps, self.frames, self.threads = [None] * n, [0] * n, [0] * n, [None] * n
         self.sources = [clean_str(x) for x in sources]  # clean source names for later
+        self.auto = auto
         for i, s in enumerate(sources):  # index, source
             # Start thread to read frames from video stream
             print(f'{i + 1}/{n}: {s}... ', end='')
@@ -319,7 +337,7 @@ class LoadStreams:  # multiple IP or RTSP cameras
         print('')  # newline
 
         # check for common shapes
-        s = np.stack([letterbox(x, self.img_size, stride=self.stride)[0].shape for x in self.imgs], 0)  # shapes
+        s = np.stack([letterbox(x, self.img_size, stride=self.stride, auto=self.auto)[0].shape for x in self.imgs])
         self.rect = np.unique(s, axis=0).shape[0] == 1  # rect inference if all shapes equal
         if not self.rect:
             print('WARNING: Different stream shapes detected. For optimal performance supply similarly-shaped streams.')
@@ -348,7 +366,7 @@ class LoadStreams:  # multiple IP or RTSP cameras
 
         # Letterbox
         img0 = self.imgs.copy()
-        img = [letterbox(x, self.img_size, auto=self.rect, stride=self.stride)[0] for x in img0]
+        img = [letterbox(x, self.img_size, stride=self.stride, auto=self.rect and self.auto)[0] for x in img0]
 
         # Stack
         img = np.stack(img, 0)
@@ -369,11 +387,9 @@ def img2label_paths(img_paths):
     return [sb.join(x.rsplit(sa, 1)).rsplit('.', 1)[0] + '.txt' for x in img_paths]
 
 
-    #########################################################################
-    # TODO:crop_aug 옵션 추가(Dataset)
 class LoadImagesAndLabels(Dataset):  # for training/testing
     def __init__(self, path, img_size=640, batch_size=16, augment=False, hyp=None, rect=False, image_weights=False,
-                 cache_images=False, single_cls=False, stride=32, pad=0.0, prefix='', crop_aug=False):
+                 cache_images=False, single_cls=False, stride=32, pad=0.0, prefix='', dist=-1, save_dir=None):
         self.img_size = img_size
         self.augment = augment
         self.hyp = hyp
@@ -385,21 +401,14 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         self.path = path
         self.albumentations = Albumentations() if augment else None
 
-        self.crop_aug = crop_aug # for crop-obj
-        #########################################################################
+        self.save_dir = save_dir
 
         try:
             f = []  # image files
             for p in path if isinstance(path, list) else [path]:
                 p = Path(p)  # os-agnostic
                 if p.is_dir():  # dir
-                    #########################################################################
-                    # TODO:dataset 로드 방법 변경
-                    temp = glob.glob(str(p / '**' / '*.*'), recursive=True)
-                    for idx, file in enumerate(temp):
-                        f.append(file)
-                    #########################################################################
-                    # f += glob.glob(str(p / '**' / '*.*'), recursive=True)
+                    f += glob.glob(str(p / '**' / '*.*'), recursive=True)
                     # f = list(p.rglob('**/*.*'))  # pathlib
                 elif p.is_file():  # file
                     with open(p, 'r') as t:
@@ -409,20 +418,22 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                         # f += [p.parent / x.lstrip(os.sep) for x in t]  # local to global path (pathlib)
                 else:
                     raise Exception(f'{prefix}{p} does not exist')
-            self.img_files = sorted([x.replace('/', os.sep) for x in f if x.split('.')[-1].lower() in img_formats])
+            self.img_files = sorted([x.replace('/', os.sep) for x in f if x.split('.')[-1].lower() in IMG_FORMATS])
             # self.img_files = sorted([x for x in f if x.suffix[1:].lower() in img_formats])  # pathlib
             assert self.img_files, f'{prefix}No images found'
         except Exception as e:
-            raise Exception(f'{prefix}Error loading data from {path}: {e}\nSee {help_url}')
+            raise Exception(f'{prefix}Error loading data from {path}: {e}\nSee {HELP_URL}')
 
         # Check cache
         self.label_files = img2label_paths(self.img_files)  # labels
         cache_path = (p if p.is_file() else Path(self.label_files[0]).parent).with_suffix('.cache')
-        #########################################################################
-        # TODO:cache 파일 지우기(dataset 정해지면 comment 처리)
-        if os.path.isfile(cache_path): # remove cache
-            os.remove(cache_path) 
-        #########################################################################
+
+        ####################################### 
+        # TODO: cache 삭제 - 데이터셋 충돌 방지
+        if os.path.exists(cache_path):
+            os.remove(cache_path)
+        ####################################### 
+
         try:
             cache, exists = np.load(cache_path, allow_pickle=True).item(), True  # load dict
             assert cache['version'] == 0.4 and cache['hash'] == get_hash(self.label_files + self.img_files)
@@ -436,7 +447,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
             tqdm(None, desc=prefix + d, total=n, initial=n)  # display cache results
             if cache['msgs']:
                 logging.info('\n'.join(cache['msgs']))  # display warnings
-        assert nf > 0 or not augment, f'{prefix}No labels in {cache_path}. Can not train without labels. See {help_url}'
+        assert nf > 0 or not augment, f'{prefix}No labels in {cache_path}. Can not train without labels. See {HELP_URL}'
 
         # Read cache
         [cache.pop(k) for k in ('hash', 'version', 'msgs')]  # remove items
@@ -481,25 +492,34 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
             self.batch_shapes = np.ceil(np.array(shapes) * img_size / stride + pad).astype(np.int) * stride
 
         # Cache images into memory for faster training (WARNING: large datasets may exceed system RAM)
-        self.imgs = [None] * n
+        self.imgs, self.img_npy = [None] * n, [None] * n
         if cache_images:
+            # if cache_images == 'disk':
+            #     self.im_cache_dir = Path(Path(self.img_files[0]).parent.as_posix() + '_npy')
+            #     self.img_npy = [self.im_cache_dir / Path(f).with_suffix('.npy').name for f in self.img_files]
+            #     self.im_cache_dir.mkdir(parents=True, exist_ok=True)
             gb = 0  # Gigabytes of cached images
             self.img_hw0, self.img_hw = [None] * n, [None] * n
-            results = ThreadPool(num_threads).imap(lambda x: load_image(*x), zip(repeat(self), range(n)))
+            results = ThreadPool(NUM_THREADS).imap(lambda x: load_image(*x), zip(repeat(self), range(n)))
             pbar = tqdm(enumerate(results), total=n)
             for i, x in pbar:
-                self.imgs[i], self.img_hw0[i], self.img_hw[i] = x  # img, hw_original, hw_resized = load_image(self, i)
-                gb += self.imgs[i].nbytes
-                pbar.desc = f'{prefix}Caching images ({gb / 1E9:.1f}GB)'
+                if cache_images == 'disk':
+                    pass
+                    # if not self.img_npy[i].exists():
+                    #     np.save(self.img_npy[i].as_posix(), x[0])
+                    # gb += self.img_npy[i].stat().st_size
+                else:
+                    self.imgs[i], self.img_hw0[i], self.img_hw[i] = x  # im, hw_orig, hw_resized = load_image(self, i)
+                    gb += self.imgs[i].nbytes
+                pbar.desc = f'{prefix}Caching images ({gb / 1E9:.1f}GB {cache_images})'
             pbar.close()
-
 
     def cache_labels(self, path=Path('./labels.cache'), prefix=''):
         # Cache dataset labels, check images and read shapes
         x = {}  # dict
         nm, nf, ne, nc, msgs = 0, 0, 0, 0, []  # number missing, found, empty, corrupt, messages
         desc = f"{prefix}Scanning '{path.parent / path.stem}' images and labels..."
-        with Pool(num_threads) as pool:
+        with Pool(NUM_THREADS) as pool:
             pbar = tqdm(pool.imap_unordered(verify_image_label, zip(self.img_files, self.label_files, repeat(prefix))),
                         desc=desc, total=len(self.img_files))
             for im_file, l, shape, segments, nm_f, nf_f, ne_f, nc_f, msg in pbar:
@@ -517,7 +537,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         if msgs:
             logging.info('\n'.join(msgs))
         if nf == 0:
-            logging.info(f'{prefix}WARNING: No labels found in {path}. See {help_url}')
+            logging.info(f'{prefix}WARNING: No labels found in {path}. See {HELP_URL}')
         x['hash'] = get_hash(self.label_files + self.img_files)
         x['results'] = nf, nm, ne, nc, len(self.img_files)
         x['msgs'] = msgs  # warnings
@@ -539,199 +559,6 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
     #     #self.shuffled_vector = np.random.permutation(self.nF) if self.augment else np.arange(self.nF)
     #     return self
 
-    #########################################################################
-    # TODO:save img for checking bbox 
-    def save_image(self, obj, lb, name, p=None):
-        h = obj.shape[0]
-        w = obj.shape[1]
-
-        img = obj.copy()
-        if p is not None:
-            for bbox in p:
-                img = cv2.rectangle(img, (bbox[0],bbox[1]),
-                        (bbox[2],bbox[3]), (0,255,0), 2)
-            if lb is not None:
-                for bbox in lb:
-                    bbox = [0, (bbox[1]-bbox[3]/2)*w, (bbox[2]-bbox[4]/2)*h, bbox[3]*w, bbox[4]*h]
-                    bbox = [int(x) for x in bbox]
-                    img = cv2.rectangle(img, (bbox[1],bbox[2]),
-                                (bbox[1]+bbox[3],bbox[2]+bbox[4]), (0,0,255), 2)                    
-        else:
-            if lb is not None:
-                lb = [int(x) for x in lb]
-                img = cv2.rectangle(img, (lb[1],lb[2]),
-                            (lb[1]+lb[3],lb[2]+lb[4]), (0,0,255), 2)
-        cv2.imwrite(f"{name}.jpg", img)
-    #########################################################################
-
-    #########################################################################
-    # TODO:func for crop_aug
-    def selfmix(self, img, labels, h, w, index):
-        # lables = [class, x,y,w,h]
-        # h, w = height, width of img
-        xmin = int(min(labels[:,1] - labels[:,3]/2) * w)
-        xmax = int(max(labels[:,1] + labels[:,3]/2) * w)
-        ymin = int(min(labels[:,2] - labels[:,4]/2) * h)
-        ymax = int(max(labels[:,2] + labels[:,4]/2) * h)
-        
-        # crop-obj 넣을 빈 공간, 8곳
-        # 1 2 3
-        # 4 5 6
-        # 7 8 9
-        Position = [
-            [0,0,xmin,ymin],    # 1
-            [xmin,0,xmax,ymin], # 2 
-            [xmax,0,w,ymin],    # 3
-            [0,ymin,xmin,ymax], # 4
-            # 5는 실제 obj
-            [xmax,ymin,w,ymax], # 6
-            [0,ymax,xmin,h],    # 7
-            [xmin,ymax,xmax,h], # 8
-            [xmax,ymax,w,h]     # 9
-            ]
-
-        # 구역마다 이미지 넣기
-        for p in Position:
-        # 1. crop-obj 생성
-            load_idx =  torch.randint(len(self.indices), (1,)).item() # crop할 이미지 선정
-            load_img, a, (h_l, w_l) = load_image(self, load_idx) 
-            lb = self.labels[load_idx].copy()[torch.randint(len(self.labels[load_idx]), (1,)).item()]
-
-            xmin_load = int((lb[1]-lb[3]/2)*w_l)
-            xmax_load = int((lb[1]+lb[3]/2)*w_l)
-            ymin_load = int((lb[2]-lb[4]/2)*h_l)
-            ymax_load = int((lb[2]+lb[4]/2)*h_l)
-
-            # 랜덤 크기의 offset 생성(4방향 다 다름)
-            offset = torch.randint(low=int(self.img_size/40), high=int(self.img_size/10), size=(4,)).numpy()
-            offset_xmin = np.clip(min(xmin_load, offset[0]), 0, offset[0])
-            offset_xmax = np.clip(min(w_l - xmax_load, offset[1]), 0, offset[1])
-            offset_ymin = np.clip(min(ymin_load, offset[2]), 0, offset[2])
-            offset_ymax = np.clip(min(h_l - ymax_load, offset[3]), 0, offset[3])
-            # normalize of load_img
-
-            # 실제 crop된 이미지
-            cropped_object = load_img[ymin_load - offset_ymin: ymax_load + offset_ymax,
-                                        xmin_load - offset_xmin: xmax_load + offset_xmax].copy()
-
-            # crop-object 크기
-            height = cropped_object.shape[0]
-            width = cropped_object.shape[1]
-
-            # crop 되기 전,후 크기 비율 곱
-            # class, x, y, w, h
-            cropped_label = [lb[0], offset_xmin, offset_ymin, xmax_load-xmin_load, ymax_load-ymin_load]
-
-            # bbox check
-            # self.save_image(img.copy(), None, f'img/{index}_input')
-            # self.save_image(cropped_object, cropped_label, f'img/{load_idx}_crop_1')
-
-        # 2. crop-obj albumentations
-            # FIXME:augment 추가 여부
-            # crop-obj augmentation
-            album_aug =  A.Compose([
-                    A.HorizontalFlip(p=0.7),
-                    A.VerticalFlip(p=0.7),
-                    A.ColorJitter(p=0.7),
-                    # add more augmentation
-                    A.ShiftScaleRotate(shift_limit=0.005, scale_limit=0.1, rotate_limit=5 , p=0.7),
-                    A.RandomBrightnessContrast(brightness_limit=0.1, contrast_limit=0.1, p=0.7),
-                    A.RGBShift(p=0.7)
-                ], bbox_params=A.BboxParams(format='coco', label_fields=['class_labels']))
-            try:
-                transformed = album_aug(image=cropped_object, bboxes=[cropped_label[1:]], class_labels=[cropped_label[0]])
-            except:
-                print(f"aug error - bbox 좌표 : {cropped_label[1:]}")
-                print(f"bbox 크기 : {lb[4]*h_l} x {lb[3]*w_l}")
-                print(f"이미지 크기 : {height} x {width}")
-                print(f"crop 이미지 이름 : {self.img_files[load_idx]}")
-                self.save_image(cropped_object, cropped_label, f'img/error_{load_idx}_album')
-                continue
-
-            # augment 된 crop-obj
-            cropped_object = transformed['image']
-            # bboxes = [(x,y,w,h), (x,y,w,h), ... ]
-            # class_labels = [ c, c, ... ]
-            cropped_label = [transformed['class_labels'][0]] + list(transformed['bboxes'][0])
-
-            # bbox check
-            # self.save_image(cropped_object, cropped_label, f'img/{load_idx}_crop_2_album')
-
-        # 3. img에 넣을 위치 정하기
-            x_img = int(0.5*torch.rand((1,)).item()*(p[2]-p[0])) + p[0]
-            y_img = int(0.5*torch.rand((1,)).item()*(p[3]-p[1])) + p[1]
-
-        # 4. crop-aug 된 img 생성
-            # p구역에 이미지 넣지 못 할 때
-            if p[2]-x_img <= width or p[3]-y_img <= height:
-                # FIXME:threshold 값 정하기
-                # 최대 offset 평균 : 200(100x2), min object size : 20
-                # -> 200 x 200 이상인 경우에만 resize 적용
-                # -> self.img_size/10 x self.img_size/10 이상인 경우에만 resize 적용
-                if p[2]-x_img > self.img_size/10 and p[3]-y_img > self.img_size/10:
-                    # 더 튀어나온 방향 기준으로 scale 정함
-                    scale_rate = min((p[2]-x_img)/width, (p[3]-y_img)/height)
-
-                    album_resize =  A.Compose([
-                            A.Resize(int(height*scale_rate), int(width*scale_rate))
-                        ], bbox_params=A.BboxParams(format='coco', label_fields=['class_labels']))
-                    try:
-                        transformed = album_resize(image=cropped_object, bboxes=[cropped_label[1:]], class_labels=[cropped_label[0]])
-                    except:
-                        print(f"resize error - bbox 좌표 : {cropped_label[1:]}")
-                        print(f"bbox 크기 : {cropped_label[3]} x {cropped_label[4]}")
-                        print(f"이미지 크기 : {height} x {width}")
-                        print(f"crop 이미지 이름 : {self.img_files[load_idx]}")
-                        self.save_image(cropped_object, cropped_label, f'img/error_{load_idx}_resize')
-                        continue
-
-                    # resize 된 crop-obj
-                    cropped_object = transformed['image']
-                    cropped_label = [transformed['class_labels'][0]]+list(transformed['bboxes'][0])
-
-                    # resize 된 crop-object 크기
-                    height = cropped_object.shape[0]
-                    width = cropped_object.shape[1]
-
-                    # bbox check
-                    # self.save_image(cropped_object, cropped_label, f'img/{load_idx}_crop_3_resize')
-                # 220 x 220 이하인 경우 다음 구역으로 
-                else:
-                    continue
-
-            # 좌표 수정
-            # bbox_coords = [0, x_img*w+cropped_label[1], y_img*h+cropped_label[2], cropped_label[3], cropped_label[4]]
-            cropped_label[1] = (x_img+cropped_label[1] + cropped_label[3]/2)/w  # (crop 이미지 넣을 좌표 + offset 크기 + 넓이/2)
-            cropped_label[2] = (y_img+cropped_label[2] + cropped_label[4]/2)/h
-            cropped_label[3] = cropped_label[3]/w 
-            cropped_label[4] = cropped_label[4]/h
-
-            # label 추가
-            labels = np.vstack((labels, np.array([cropped_label])))
-
-            # img에 crop-obj 삽입
-            try:
-                img[y_img:y_img+height, x_img:x_img+width] = cropped_object
-            except:
-                print(f"paste error - bbox 좌표 : {cropped_label[1:]}")
-                print(f"이미지 크기 : {img.shape[0]} x {img.shape[1]}")
-                print(f"crop 크기 : {height} x {width} (시작좌표 : {y_img},{x_img})")
-                print(f"max 좌표 : {y_img+height}, {x_img+width}")
-                print(f"crop 이미지 이름 : {self.img_files[load_idx]}")
-                print(f"이미지 이름 : {self.img_files[index]}")
-                self.save_image(img.copy(), labels, f'img/{index}_crop_4_paste', p=Position)
-                continue
-
-            # label 추가
-            # labels = np.vstack((labels, np.array([cropped_label])))
-
-            # bbox check
-            if index in range(10,101,10):
-                self.save_image(img.copy(), labels, f'img/monitor_{index}', p=Position)
-
-        return img, labels
-#########################################################################
-
     def __getitem__(self, index):
         index = self.indices[index]  # linear, shuffled, or image_weights
 
@@ -750,12 +577,13 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
             # Load image
             img, (h0, w0), (h, w) = load_image(self, index)
 
-#########################################################################
-# TODO:crop_aug 적용(개별 이미지)
-            labels = self.labels[index].copy() # labels 먼저 로드
-            if self.crop_aug:
-                img , labels = self.selfmix(img, labels, h, w, index)
-#########################################################################
+            #######################################        
+            # TODO: bbox-cutmix augmentation
+            labels = self.labels[index].copy()
+            if hyp is not None :
+                if hyp['bbox_cutmix'] and self.augment:
+                    img , labels = bbox_cutmix(self, img, labels, h, w, index)
+            #######################################
 
             # Letterbox
             shape = self.batch_shapes[self.batch[index]] if self.rect else self.img_size  # final letterboxed shape
@@ -768,11 +596,11 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
 
             if self.augment:
                 img, labels = random_perspective(img, labels,
-                                                 degrees=hyp['degrees'],
-                                                 translate=hyp['translate'],
-                                                 scale=hyp['scale'],
-                                                 shear=hyp['shear'],
-                                                 perspective=hyp['perspective'])
+                                                degrees=hyp['degrees'],
+                                                translate=hyp['translate'],
+                                                scale=hyp['scale'],
+                                                shear=hyp['shear'],
+                                                perspective=hyp['perspective'])
 
         nl = len(labels)  # number of labels
         if nl:
@@ -781,6 +609,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
         if self.augment:
             # Albumentations
             img, labels = self.albumentations(img, labels)
+            nl = len(labels)  # update after albumentations
 
             # HSV color-space
             augment_hsv(img, hgain=hyp['hsv_h'], sgain=hyp['hsv_s'], vgain=hyp['hsv_v'])
@@ -845,48 +674,269 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
 
 
 # Ancillary functions --------------------------------------------------------------------------------------------------
-def load_image(self, index):
-    # loads 1 image from dataset, returns img, original hw, resized hw
-    img = self.imgs[index]
-    if img is None:  # not cached
-        path = self.img_files[index]
-        img = cv2.imread(path)  # BGR
-        assert img is not None, 'Image Not Found ' + path
-        h0, w0 = img.shape[:2]  # orig hw
+#########################################################################
+def save_image(obj, lb, name, p=None):
+    h = obj.shape[0]
+    w = obj.shape[1]
+
+    img = obj.copy()
+    if p is not None:
+        for bbox in p:
+            img = cv2.rectangle(img, (bbox[0],bbox[1]),
+                    (bbox[2],bbox[3]), (0,255,0), 2)
+        if lb is not None:
+            for bbox in lb:
+                bbox = [0, (bbox[1]-bbox[3]/2)*w, (bbox[2]-bbox[4]/2)*h, bbox[3]*w, bbox[4]*h]
+                bbox = [int(x) for x in bbox]
+                img = cv2.rectangle(img, (bbox[1],bbox[2]),
+                            (bbox[1]+bbox[3],bbox[2]+bbox[4]), (0,0,255), 2)                    
+    else:
+        if lb is not None:
+            lb = [int(x) for x in lb]
+            img = cv2.rectangle(img, (lb[1],lb[2]),
+                        (lb[1]+lb[3],lb[2]+lb[4]), (0,0,255), 2)
+    cv2.imwrite(f"{name}.jpg", img)
+
+def bbox_cutmix(self, img, labels, h, w, index):
+    # for logging
+    if not os.path.exists(f'{self.save_dir}/img'):
+        os.mkdir(f'{self.save_dir}/img')
+
+    # lables = [class, x,y,w,h]
+    # h, w = height, width of img
+    xmin = int(min(labels[:,1] - labels[:,3]/2) * w)
+    xmax = int(max(labels[:,1] + labels[:,3]/2) * w)
+    ymin = int(min(labels[:,2] - labels[:,4]/2) * h)
+    ymax = int(max(labels[:,2] + labels[:,4]/2) * h)
+    
+    # crop-obj 넣을 빈 공간, 8곳
+    # 1 2 3
+    # 4 5 6
+    # 7 8 9
+    Position = [
+        [0,0,xmin,ymin],    # 1
+        [xmin,0,xmax,ymin], # 2 
+        [xmax,0,w,ymin],    # 3
+        [0,ymin,xmin,ymax], # 4
+        # 5는 실제 obj
+        [xmax,ymin,w,ymax], # 6
+        [0,ymax,xmin,h],    # 7
+        [xmin,ymax,xmax,h], # 8
+        [xmax,ymax,w,h]     # 9
+        ]
+
+    # 구역마다 이미지 넣기
+    for p in Position:
+        if torch.rand(1) > 0.7: # crop aug 확률 추가
+            continue
+        # 1. crop-obj 생성
+        load_idx =  torch.randint(len(self.indices), (1,)).item() # crop할 이미지 선정
+        load_img, a, (h_l, w_l) = load_image(self, load_idx) 
+        try:
+            lb = self.labels[load_idx].copy()[torch.randint(len(self.labels[load_idx]), (1,)).item()]
+        except:
+            print('-'*30)
+            print('>> bbox_cutmix - index error')
+            print(f" - load index : {load_idx}")
+            print(f" - label : {self.labels[load_idx]}")
+            print(f" - file path : {self.img_files[load_idx]}")
+            print('-'*30)
+            exit()
+
+        xmin_load = int((lb[1]-lb[3]/2)*w_l)
+        xmax_load = int((lb[1]+lb[3]/2)*w_l)
+        ymin_load = int((lb[2]-lb[4]/2)*h_l)
+        ymax_load = int((lb[2]+lb[4]/2)*h_l)
+
+        # 랜덤 크기의 offset 생성(4방향 다 다름)
+        offset = torch.randint(low=int(self.img_size/40), high=int(self.img_size/10), size=(4,)).numpy()
+        offset_xmin = np.clip(min(xmin_load, offset[0]), 0, offset[0])
+        offset_xmax = np.clip(min(w_l - xmax_load, offset[1]), 0, offset[1])
+        offset_ymin = np.clip(min(ymin_load, offset[2]), 0, offset[2])
+        offset_ymax = np.clip(min(h_l - ymax_load, offset[3]), 0, offset[3])
+        # normalize of load_img
+
+        # 실제 crop된 이미지
+        cropped_object = load_img[ymin_load - offset_ymin: ymax_load + offset_ymax,
+                                    xmin_load - offset_xmin: xmax_load + offset_xmax].copy()
+
+        # crop-object 크기
+        height = cropped_object.shape[0]
+        width = cropped_object.shape[1]
+
+        # crop 되기 전,후 크기 비율 곱
+        # class, x, y, w, h
+        cropped_label = [lb[0], offset_xmin, offset_ymin, xmax_load-xmin_load, ymax_load-ymin_load]
+
+        # bbox check
+        # self.save_image(img.copy(), None, f'img/{index}_input')
+        # self.save_image(cropped_object, cropped_label, f'img/{load_idx}_crop_1')
+
+        # 2. crop-obj albumentations
+        # FIXME:augment 추가 여부
+        # crop-obj augmentation
+        album_aug =  A.Compose([
+                A.HorizontalFlip(p=0.7),
+                A.VerticalFlip(p=0.7),
+                A.ColorJitter(p=0.7),
+                A.ShiftScaleRotate(rotate_limit=10, p=0.7),
+            ], bbox_params=A.BboxParams(format='coco', label_fields=['class_labels'], min_visibility=0.5))
+        try:
+            transformed = album_aug(image=cropped_object, bboxes=[cropped_label[1:]], class_labels=[cropped_label[0]])
+        except:
+            print('-'*30)
+            print('>> bbox_cutmix - aug error')
+            print(f" - bbox coord : {cropped_label[1:]}")
+            print(f" - bbox size(HxW) : {lb[4]*h_l} x {lb[3]*w_l}")
+            print(f" - image size(HxW) : {height} x {width}")
+            print(f" - label : {self.labels[load_idx]}")
+            print(f" - file path : {self.img_files[load_idx]}")
+            print('-'*30)
+            save_image(cropped_object, cropped_label, f'{self.save_dir}/img/error_{load_idx}_aug')
+            continue
+
+        if len(transformed['class_labels']) == 0:
+            continue
+
+        # augment 된 crop-obj
+        cropped_object = transformed['image']
+        # bboxes = [(x,y,w,h), (x,y,w,h), ... ]
+        # class_labels = [ c, c, ... ]
+        cropped_label = [transformed['class_labels'][0]] + list(transformed['bboxes'][0])
+
+        # bbox check
+        # self.save_image(cropped_object, cropped_label, f'img/{load_idx}_crop_2_album')
+
+        # 3. img에 넣을 위치 정하기
+        x_img = int(0.5*torch.rand((1,)).item()*(p[2]-p[0])) + p[0]
+        y_img = int(0.5*torch.rand((1,)).item()*(p[3]-p[1])) + p[1]
+
+        # 4. crop-aug 된 img 생성
+        # p구역에 이미지 넣지 못 할 때
+        if p[2]-x_img <= width or p[3]-y_img <= height:
+            # FIXME:threshold 값 정하기
+            # 최대 offset 평균 : 200(100x2), min object size : 20
+            # -> 200 x 200 이상인 경우에만 resize 적용
+            # -> self.img_size/10 x self.img_size/10 이상인 경우에만 resize 적용
+            if p[2]-x_img > self.img_size/10 and p[3]-y_img > self.img_size/10:
+                # 더 튀어나온 방향 기준으로 scale 정함
+                scale_rate = min((p[2]-x_img)/width, (p[3]-y_img)/height)
+
+                album_resize =  A.Compose([
+                        A.Resize(int(height*scale_rate), int(width*scale_rate))
+                    ], bbox_params=A.BboxParams(format='coco', label_fields=['class_labels']))
+                try:
+                    transformed = album_resize(image=cropped_object, bboxes=[cropped_label[1:]], class_labels=[cropped_label[0]])
+                except:
+                    print('-'*30)
+                    print('>> bbox_cutmix - resize error')
+                    print(f" - crop coord : {cropped_label[1:]}")
+                    print(f" - crop size(HxW) : {cropped_label[4]} x {cropped_label[3]}")
+                    print(f" - image size(HxW) : {height} x {width}")
+                    print(f" - label : {self.labels[load_idx]}")
+                    print(f" - file path : {self.img_files[load_idx]}")
+                    print('-'*30)
+                    save_image(cropped_object, cropped_label, f'{self.save_dir}/img/error_{load_idx}_resize')
+                    continue
+
+                # resize 된 crop-obj
+                cropped_object = transformed['image']
+                cropped_label = [transformed['class_labels'][0]]+list(transformed['bboxes'][0])
+
+                # resize 된 crop-object 크기
+                height = cropped_object.shape[0]
+                width = cropped_object.shape[1]
+
+                # bbox check
+                # self.save_image(cropped_object, cropped_label, f'img/{load_idx}_crop_3_resize')
+            # 220 x 220 이하인 경우 다음 구역으로 
+            else:
+                continue
+
+        # 좌표 수정
+        # bbox_coords = [0, x_img*w+cropped_label[1], y_img*h+cropped_label[2], cropped_label[3], cropped_label[4]]
+        cropped_label[1] = (x_img+cropped_label[1] + cropped_label[3]/2)/w  # (crop 이미지 넣을 좌표 + offset 크기 + 넓이/2)
+        cropped_label[2] = (y_img+cropped_label[2] + cropped_label[4]/2)/h
+        cropped_label[3] = cropped_label[3]/w 
+        cropped_label[4] = cropped_label[4]/h
+
+        # label 추가
+        labels = np.vstack((labels, np.array([cropped_label])))
+
+        # img에 crop-obj 삽입
+        try:
+            img[y_img:y_img+height, x_img:x_img+width] = cropped_object
+        except:
+            print('-'*30)
+            print('>> bbox_cutmix - paste error')
+            print(f" - crop coord : {cropped_label[1:]}")
+            print(f" - crop size(HxW) : {height} x {width}")
+            print(f" - min point : ({y_img}, {x_img})")
+            print(f" - max point : ({y_img+height}, {x_img+width})")
+            print(f" - image size(HxW) : {img.shape[1]} x {img.shape[0]}")
+            print(f" - label : {self.labels[load_idx]}")
+            print(f" - crop image path : {self.img_files[load_idx]}")
+            print(f" - file path : {self.img_files[index]}")
+            print('-'*30)
+            save_image(img.copy(), labels, f'{self.save_dir}/img/error_{load_idx}_{index}_paste', p=Position)
+            continue
+
+        # label 추가
+        # labels = np.vstack((labels, np.array([cropped_label])))
+
+        # bbox check
+        if index in range(10,101,10):
+            # print("bbox check", img.shape, index)
+            save_image(img.copy(), labels, f'{self.save_dir}/img/monitor_{index}', p=Position)
+
+    return img, labels
+#########################################################################
+
+def load_image(self, i):
+    # loads 1 image from dataset index 'i', returns im, original hw, resized hw
+    im = self.imgs[i]
+    if im is None:  # not cached in ram
+        # npy = self.img_npy[i]
+        # if npy and npy.exists():  # load npy
+        #     im = np.load(npy)
+        # else:  # read image
+        #     path = self.img_files[i]
+        #     im = cv2.imread(path)  # BGR
+        #     assert im is not None, 'Image Not Found ' + path
+        path = self.img_files[i]
+        im = cv2.imread(path)  # BGR
+        assert im is not None, 'Image Not Found ' + path
+        h0, w0 = im.shape[:2]  # orig hw
         r = self.img_size / max(h0, w0)  # ratio
         if r != 1:  # if sizes are not equal
-            img = cv2.resize(img, (int(w0 * r), int(h0 * r)),
-                             interpolation=cv2.INTER_AREA if r < 1 and not self.augment else cv2.INTER_LINEAR)
-        return img, (h0, w0), img.shape[:2] # img, hw_original, hw_resized
-    else :
-
-#########################################################################
-# TODO:use cached images
-        return self.imgs[index].copy(), self.img_hw0[index], self.img_hw[index] # img, hw_original, hw_resized
-#########################################################################
-
-    # else:
-        # return self.imgs[index], self.img_hw0[index], self.img_hw[index]  # img, hw_original, hw_resized
+            im = cv2.resize(im, (int(w0 * r), int(h0 * r)),
+                            interpolation=cv2.INTER_AREA if r < 1 and not self.augment else cv2.INTER_LINEAR)
+        return im, (h0, w0), im.shape[:2]  # im, hw_original, hw_resized
+    else:
+        return self.imgs[i].copy(), self.img_hw0[i], self.img_hw[i]  # im, hw_original, hw_resized
 
 
 def load_mosaic(self, index):
     # loads images in a 4-mosaic
 
+    hyp = self.hyp
+
     labels4, segments4 = [], []
     s = self.img_size
     yc, xc = [int(random.uniform(-x, 2 * s + x)) for x in self.mosaic_border]  # mosaic center x, y
     indices = [index] + random.choices(self.indices, k=3)  # 3 additional image indices
+    random.shuffle(indices)
     for i, index in enumerate(indices):
         # Load image
         img, _, (h, w) = load_image(self, index)
 
-#########################################################################
-# TODO:crop_aug 적용(mosaic)
-        labels, segments = self.labels[index].copy(), self.segments[index].copy() # labels 먼저 로드
-
-        if self.crop_aug:
-            img , labels = self.selfmix(img, labels, h, w, index)
-#########################################################################
+        #######################################        
+        # TODO: bbox-cutmix augmentation
+        labels, segments = self.labels[index].copy(), self.segments[index].copy()
+        if hyp is not None :
+            if hyp['bbox_cutmix'] and self.augment:
+                img , labels = bbox_cutmix(self, img, labels, h, w, index)
+        #######################################
 
         # place img in img4
         if i == 0:  # top left
@@ -937,20 +987,23 @@ def load_mosaic(self, index):
 def load_mosaic9(self, index):
     # loads images in a 9-mosaic
 
+    hyp = self.hyp
+
     labels9, segments9 = [], []
     s = self.img_size
     indices = [index] + random.choices(self.indices, k=8)  # 8 additional image indices
+    random.shuffle(indices)
     for i, index in enumerate(indices):
         # Load image
         img, _, (h, w) = load_image(self, index)
 
-#########################################################################
-# TODO:crop_aug 적용(mosaic9)
-        labels, segments = self.labels[index].copy(), self.segments[index].copy() # labels 먼저 로드
-
-        if self.crop_aug:
-            img , labels = self.selfmix(img, labels, h, w, index)
-#########################################################################
+        #######################################        
+        # TODO: bbox-cutmix augmentation
+        labels, segments = self.labels[index].copy(), self.segments[index].copy()
+        if hyp is not None :
+            if hyp['bbox_cutmix'] and self.augment:
+                img , labels = bbox_cutmix(self, img, labels, h, w, index)
+        #######################################
 
         # place img in img9
         if i == 0:  # center
@@ -1038,7 +1091,7 @@ def extract_boxes(path='../datasets/coco128'):  # from utils.datasets import *; 
     files = list(path.rglob('*.*'))
     n = len(files)  # number of files
     for im_file in tqdm(files, total=n):
-        if im_file.suffix[1:] in img_formats:
+        if im_file.suffix[1:] in IMG_FORMATS:
             # image
             im = cv2.imread(str(im_file))[..., ::-1]  # BGR to RGB
             h, w = im.shape[:2]
@@ -1074,7 +1127,7 @@ def autosplit(path='../datasets/coco128/images', weights=(0.9, 0.1, 0.0), annota
         annotated_only:  Only use images with an annotated txt file
     """
     path = Path(path)  # images dir
-    files = sum([list(path.rglob(f"*.{img_ext}")) for img_ext in img_formats], [])  # image files only
+    files = sum([list(path.rglob(f"*.{img_ext}")) for img_ext in IMG_FORMATS], [])  # image files only
     n = len(files)  # number of files
     random.seed(0)  # for reproducibility
     indices = random.choices([0, 1, 2], weights=weights, k=n)  # assign each image to a split
@@ -1092,25 +1145,23 @@ def autosplit(path='../datasets/coco128/images', weights=(0.9, 0.1, 0.0), annota
 def verify_image_label(args):
     # Verify one image-label pair
     im_file, lb_file, prefix = args
-    nm, nf, ne, nc = 0, 0, 0, 0  # number missing, found, empty, corrupt
+    nm, nf, ne, nc, msg, segments = 0, 0, 0, 0, '', []  # number (missing, found, empty, corrupt), message, segments
     try:
         # verify images
         im = Image.open(im_file)
         im.verify()  # PIL verify
         shape = exif_size(im)  # image size
         assert (shape[0] > 9) & (shape[1] > 9), f'image size {shape} <10 pixels'
-        assert im.format.lower() in img_formats, f'invalid image format {im.format}'
-
-#########################################################################
-# TODO:로딩 실패로 comment 처리
-        # if im.format.lower() in ('jpg', 'jpeg'):
-        #     with open(im_file, 'rb') as f:
-        #         f.seek(-2, 2)
-        #         assert f.read() == b'\xff\xd9', 'corrupted JPEG'
-#########################################################################
+        assert im.format.lower() in IMG_FORMATS, f'invalid image format {im.format}'
+        if im.format.lower() in ('jpg', 'jpeg'):
+            with open(im_file, 'rb') as f:
+                f.seek(-2, 2)
+                if f.read() != b'\xff\xd9':  # corrupt JPEG
+                    pass
+                    # Image.open(im_file).save(im_file, format='JPEG', subsampling=0, quality=100)  # re-save image
+                    # msg = f'{prefix}WARNING: corrupt JPEG restored and saved {im_file}'
 
         # verify labels
-        segments = []  # instance segments
         if os.path.isfile(lb_file):
             nf = 1  # label found
             with open(lb_file, 'r') as f:
@@ -1131,18 +1182,18 @@ def verify_image_label(args):
         else:
             nm = 1  # label missing
             l = np.zeros((0, 5), dtype=np.float32)
-        return im_file, l, shape, segments, nm, nf, ne, nc, ''
+        return im_file, l, shape, segments, nm, nf, ne, nc, msg
     except Exception as e:
         nc = 1
         msg = f'{prefix}WARNING: Ignoring corrupted image and/or label {im_file}: {e}'
         return [None, None, None, None, nm, nf, ne, nc, msg]
 
 
-def dataset_stats(path='coco128.yaml', autodownload=False, verbose=False):
+def dataset_stats(path='coco128.yaml', autodownload=False, verbose=False, profile=False, hub=False):
     """ Return dataset statistics dictionary with images and instances counts per split per class
-    Usage1: from utils.datasets import *; dataset_stats('coco128.yaml', verbose=True)
-    Usage2: from utils.datasets import *; dataset_stats('../datasets/coco128.zip', verbose=True)
-    
+    To run in parent directory: export PYTHONPATH="$PWD/yolov5"
+    Usage1: from utils.datasets import *; dataset_stats('coco128.yaml', autodownload=True)
+    Usage2: from utils.datasets import *; dataset_stats('../datasets/coco128_with_yaml.zip')
     Arguments
         path:           Path to data.yaml or data.zip (with data.yaml inside data.zip)
         autodownload:   Attempt to download dataset if not found locally
@@ -1151,35 +1202,42 @@ def dataset_stats(path='coco128.yaml', autodownload=False, verbose=False):
 
     def round_labels(labels):
         # Update labels to integer class and 6 decimal place floats
-        return [[int(c), *[round(x, 6) for x in points]] for c, *points in labels]
+        return [[int(c), *[round(x, 4) for x in points]] for c, *points in labels]
 
     def unzip(path):
         # Unzip data.zip TODO: CONSTRAINT: path/to/abc.zip MUST unzip to 'path/to/abc/'
         if str(path).endswith('.zip'):  # path is data.zip
+            assert Path(path).is_file(), f'Error unzipping {path}, file not found'
             assert os.system(f'unzip -q {path} -d {path.parent}') == 0, f'Error unzipping {path}'
-            data_dir = path.with_suffix('')  # dataset directory
-            return True, data_dir, list(data_dir.rglob('*.yaml'))[0]  # zipped, data_dir, yaml_path
+            dir = path.with_suffix('')  # dataset directory
+            return True, str(dir), next(dir.rglob('*.yaml'))  # zipped, data_dir, yaml_path
         else:  # path is data.yaml
             return False, None, path
 
+    def hub_ops(f, max_dim=1920):
+        # HUB ops for 1 image 'f'
+        im = Image.open(f)
+        r = max_dim / max(im.height, im.width)  # ratio
+        if r < 1.0:  # image too large
+            im = im.resize((int(im.width * r), int(im.height * r)))
+        im.save(im_dir / Path(f).name, quality=75)  # save
+
     zipped, data_dir, yaml_path = unzip(Path(path))
-    with open(check_file(yaml_path)) as f:
+    with open(check_yaml(yaml_path), errors='ignore') as f:
         data = yaml.safe_load(f)  # data dict
         if zipped:
             data['path'] = data_dir  # TODO: should this be dir.resolve()?
     check_dataset(data, autodownload)  # download dataset if missing
-    nc = data['nc']  # number of classes
-    stats = {'nc': nc, 'names': data['names']}  # statistics dictionary
+    hub_dir = Path(data['path'] + ('-hub' if hub else ''))
+    stats = {'nc': data['nc'], 'names': data['names']}  # statistics dictionary
     for split in 'train', 'val', 'test':
         if data.get(split) is None:
             stats[split] = None  # i.e. no test set
             continue
         x = []
-        dataset = LoadImagesAndLabels(data[split], augment=False, rect=True)  # load dataset
-        if split == 'train':
-            cache_path = Path(dataset.label_files[0]).parent.with_suffix('.cache')  # *.cache path
+        dataset = LoadImagesAndLabels(data[split])  # load dataset
         for label in tqdm(dataset.labels, total=dataset.n, desc='Statistics'):
-            x.append(np.bincount(label[:, 0].astype(int), minlength=nc))
+            x.append(np.bincount(label[:, 0].astype(int), minlength=data['nc']))
         x = np.array(x)  # shape(128x80)
         stats[split] = {'instance_stats': {'total': int(x.sum()), 'per_class': x.sum(0).tolist()},
                         'image_stats': {'total': dataset.n, 'unlabelled': int(np.all(x == 0, 1).sum()),
@@ -1187,10 +1245,37 @@ def dataset_stats(path='coco128.yaml', autodownload=False, verbose=False):
                         'labels': [{str(Path(k).name): round_labels(v.tolist())} for k, v in
                                    zip(dataset.img_files, dataset.labels)]}
 
+        if hub:
+            im_dir = hub_dir / 'images'
+            im_dir.mkdir(parents=True, exist_ok=True)
+            for _ in tqdm(ThreadPool(NUM_THREADS).imap(hub_ops, dataset.img_files), total=dataset.n, desc='HUB Ops'):
+                pass
+
+    # Profile
+    stats_path = hub_dir / 'stats.json'
+    if profile:
+        for _ in range(1):
+            file = stats_path.with_suffix('.npy')
+            t1 = time.time()
+            np.save(file, stats)
+            t2 = time.time()
+            x = np.load(file, allow_pickle=True)
+            print(f'stats.npy times: {time.time() - t2:.3f}s read, {t2 - t1:.3f}s write')
+
+            file = stats_path.with_suffix('.json')
+            t1 = time.time()
+            with open(file, 'w') as f:
+                json.dump(stats, f)  # save stats *.json
+            t2 = time.time()
+            with open(file, 'r') as f:
+                x = json.load(f)  # load hyps dict
+            print(f'stats.json times: {time.time() - t2:.3f}s read, {t2 - t1:.3f}s write')
+
     # Save, print and return
-    with open(cache_path.with_suffix('.json'), 'w') as f:
-        json.dump(stats, f)  # save stats *.json
+    if hub:
+        print(f'Saving {stats_path.resolve()}...')
+        with open(stats_path, 'w') as f:
+            json.dump(stats, f)  # save stats.json
     if verbose:
         print(json.dumps(stats, indent=2, sort_keys=False))
-        # print(yaml.dump([stats], sort_keys=False, default_flow_style=False))
     return stats

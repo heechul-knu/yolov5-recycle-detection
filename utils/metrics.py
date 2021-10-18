@@ -1,27 +1,24 @@
-# Model validation metrics
+# YOLOv5 🚀 by Ultralytics, GPL-3.0 license
+"""
+Model validation metrics
+"""
 
+import math
 import warnings
 from pathlib import Path
 
-import math
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 
 
+#######################################
+    # TODO: f1score 추가    
 def fitness(x):
     # Model fitness as a weighted combination of metrics
-    # w = [0.0, 0.0, 0.1, 0.9]  # weights for [P, R, mAP@0.5, mAP@0.5:0.95]
-    # return (x[:, :4] * w).sum(1)
-
-    ##########################################################
-    # TODO:f1 score 추가
-    w = [0.0, 0.0, 0.1, 0.4, 0.5]  # weights for [P, R, mAP@0.5, mAP@0.5:0.95, f1 score]
-    arr_metrics = np.concatenate((x[:, :4], np.reshape(x[:,-1], (1,-1)).T), axis=1)
-
-    return (arr_metrics * w).sum(1)
-    ##########################################################
-    
+    w = [0.0, 0.0, 0.9, 0.1, 0.9]  # weights for [P, R, f1 score, mAP@0.5, mAP@0.5:0.95]
+    return (x[:, :5] * w).sum(1)
+#######################################
 
 def ap_per_class(tp, conf, pred_cls, target_cls, plot=False, save_dir='.', names=()):
     """ Compute the average precision, given the recall and precision curves.
@@ -36,7 +33,7 @@ def ap_per_class(tp, conf, pred_cls, target_cls, plot=False, save_dir='.', names
     # Returns
         The average precision as computed in py-faster-rcnn.
     """
-
+    
     # Sort by objectness
     i = np.argsort(-conf)
     tp, conf, pred_cls = tp[i], conf[i], pred_cls[i]
@@ -96,8 +93,8 @@ def compute_ap(recall, precision):
     """
 
     # Append sentinel values to beginning and end
-    mrec = np.concatenate(([0.], recall, [recall[-1] + 0.01]))
-    mpre = np.concatenate(([1.], precision, [0.]))
+    mrec = np.concatenate(([0.0], recall, [1.0]))
+    mpre = np.concatenate(([1.0], precision, [0.0]))
 
     # Compute the precision envelope
     mpre = np.flip(np.maximum.accumulate(np.flip(mpre)))
@@ -182,7 +179,8 @@ class ConfusionMatrix:
                            yticklabels=names + ['background FN'] if labels else "auto").set_facecolor((1, 1, 1))
             fig.axes[0].set_xlabel('True')
             fig.axes[0].set_ylabel('Predicted')
-            fig.savefig(Path(save_dir) / 'confusion_matrix.png', dpi=250)
+            fig.savefig(Path(save_dir) / f"confusion_matrix{'_norm' if normalize else ''}.png", dpi=250)
+            plt.close()
         except Exception as e:
             print(f'WARNING: ConfusionMatrix plot failure: {e}')
 
@@ -313,6 +311,7 @@ def plot_pr_curve(px, py, ap, save_dir='pr_curve.png', names=()):
     ax.set_ylim(0, 1)
     plt.legend(bbox_to_anchor=(1.04, 1), loc="upper left")
     fig.savefig(Path(save_dir), dpi=250)
+    plt.close()
 
 
 def plot_mc_curve(px, py, save_dir='mc_curve.png', names=(), xlabel='Confidence', ylabel='Metric'):
@@ -333,3 +332,4 @@ def plot_mc_curve(px, py, save_dir='mc_curve.png', names=(), xlabel='Confidence'
     ax.set_ylim(0, 1)
     plt.legend(bbox_to_anchor=(1.04, 1), loc="upper left")
     fig.savefig(Path(save_dir), dpi=250)
+    plt.close()
