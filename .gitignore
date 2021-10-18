@@ -1,6 +1,7 @@
 # folder
 runs/
 custom/
+archive/
 
 # cache
 __pycache__/
