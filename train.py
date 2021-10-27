@@ -6,6 +6,11 @@ Usage:
     $ python path/to/train.py --data coco128.yaml --weights yolov5s.pt --img 640
 """
 
+
+from shutil import copyfile
+from datetime import datetime
+
+
 import argparse
 import logging
 import math
@@ -71,6 +76,12 @@ def train(hyp,  # path/to/hyp.yaml or hyp dictionary
     w = save_dir / 'weights'  # weights dir
     (w.parent if evolve else w).mkdir(parents=True, exist_ok=True)  # make dir
     last, best = w / 'last.pt', w / 'best.pt'
+
+    # Dataset config
+    #########################################################################
+    # os.makedirs(f"{opt.save_dir}", exist_ok=True)
+    copyfile(opt.data, os.path.join(str(save_dir), f"{opt.data.split('/')[-1]}")) # save data file (.yaml)
+    #########################################################################
 
     # Hyperparameters
     if isinstance(hyp, str):
@@ -519,7 +530,7 @@ def main(opt, callbacks=Callbacks()):
     set_logging(RANK)
     if RANK in [-1, 0]:
         print(colorstr('train: ') + ', '.join(f'{k}={v}' for k, v in vars(opt).items()))
-        check_git_status()
+        # check_git_status()
         check_requirements(requirements=FILE.parent / 'requirements.txt', exclude=['thop'])
 
     # Resume
@@ -536,6 +547,11 @@ def main(opt, callbacks=Callbacks()):
         if opt.evolve:
             opt.project = 'runs/evolve'
             opt.exist_ok, opt.resume = opt.resume, False  # pass resume to exist_ok and disable resume
+        
+        #########################################################################
+        if opt.name == 'exp':
+            opt.name = datetime.now().strftime('%b%d_%H-%M-%S')
+        #########################################################################   
         opt.save_dir = str(increment_path(Path(opt.project) / opt.name, exist_ok=opt.exist_ok))
 
     # DDP mode

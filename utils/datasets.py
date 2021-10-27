@@ -608,8 +608,9 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
 
         if self.augment:
             # Albumentations
-            img, labels = self.albumentations(img, labels)
-            nl = len(labels)  # update after albumentations
+            if random.random() < hyp['more_aug']:
+                img, labels = self.albumentations(img, labels)
+                nl = len(labels)  # update after albumentations
 
             # HSV color-space
             augment_hsv(img, hgain=hyp['hsv_h'], sgain=hyp['hsv_s'], vgain=hyp['hsv_v'])
@@ -699,8 +700,7 @@ def save_image(obj, lb, name, p=None):
 
 def bbox_cutmix(self, img, labels, h, w, index):
     # for logging
-    if not os.path.exists(f'{self.save_dir}/img'):
-        os.mkdir(f'{self.save_dir}/img')
+    os.makedirs(f'{self.save_dir}/img', exist_ok=True)
 
     # lables = [class, x,y,w,h]
     # h, w = height, width of img
@@ -749,7 +749,7 @@ def bbox_cutmix(self, img, labels, h, w, index):
         ymax_load = int((lb[2]+lb[4]/2)*h_l)
 
         # 랜덤 크기의 offset 생성(4방향 다 다름)
-        offset = torch.randint(low=int(self.img_size/40), high=int(self.img_size/10), size=(4,)).numpy()
+        offset = torch.randint(low=int(self.img_size/40), high=int(self.img_size/20), size=(4,)).numpy()
         offset_xmin = np.clip(min(xmin_load, offset[0]), 0, offset[0])
         offset_xmax = np.clip(min(w_l - xmax_load, offset[1]), 0, offset[1])
         offset_ymin = np.clip(min(ymin_load, offset[2]), 0, offset[2])
@@ -779,7 +779,8 @@ def bbox_cutmix(self, img, labels, h, w, index):
                 A.HorizontalFlip(p=0.7),
                 A.VerticalFlip(p=0.7),
                 A.ColorJitter(p=0.7),
-                A.ShiftScaleRotate(rotate_limit=10, p=0.7),
+                A.ShiftScaleRotate(shift_limit=0.01, scale_limit=0.1, rotate_limit=5, p=0.7),
+                A.RandomRotate90(p=0.7),
             ], bbox_params=A.BboxParams(format='coco', label_fields=['class_labels'], min_visibility=0.5))
         try:
             transformed = album_aug(image=cropped_object, bboxes=[cropped_label[1:]], class_labels=[cropped_label[0]])
@@ -803,6 +804,9 @@ def bbox_cutmix(self, img, labels, h, w, index):
         # bboxes = [(x,y,w,h), (x,y,w,h), ... ]
         # class_labels = [ c, c, ... ]
         cropped_label = [transformed['class_labels'][0]] + list(transformed['bboxes'][0])
+        # crop-object 크기
+        height = cropped_object.shape[0]
+        width = cropped_object.shape[1]
 
         # bbox check
         # self.save_image(cropped_object, cropped_label, f'img/{load_idx}_crop_2_album')

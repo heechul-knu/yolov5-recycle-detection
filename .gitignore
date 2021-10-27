@@ -10,3 +10,6 @@ __pycache__/
 
 # ckpt
 *.pt
+
+# file
+*.ipynb
