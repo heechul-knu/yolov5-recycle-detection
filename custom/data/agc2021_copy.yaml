@@ -1,0 +1,9 @@
+path : '/ssd_2/RecycleTrash/yolo/images/'
+
+train: [] 
+val: ['test_2021AGC_30']
+# ['test_211026_405']
+
+nc: 7
+
+names: ['paper','paperpack','can','glass','pet','plastic','vinyl']
