@@ -2,6 +2,9 @@
 runs/
 custom/
 archive/
+AGC2021_confMat/
+weights/
+img/
 
 # cache
 __pycache__/
